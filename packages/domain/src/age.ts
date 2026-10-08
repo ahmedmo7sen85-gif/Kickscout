@@ -12,6 +12,8 @@ export const DEFAULT_GUARDIAN_CONSENT_AGE = 18;
 export type AgeBand = 'u13' | 'u16' | 'u18' | 'adult';
 
 export interface CountryAgeRule {
+  /** No account below this age. Never lower than 13. */
+  minimumAge: number;
   /** Users younger than this need verified guardian consent. */
   guardianConsentAge: number;
   /** Set to true only after legal review of this country's rule. */
@@ -19,19 +21,19 @@ export interface CountryAgeRule {
   source?: string;
 }
 
-/**
- * Country overrides. Intentionally empty: entries are added only with a reviewed legal source.
- * Keyed by ISO 3166-1 alpha-2 code.
- */
-export const COUNTRY_AGE_RULES: Readonly<Record<string, CountryAgeRule>> = Object.freeze({});
+export const DEFAULT_RULE: CountryAgeRule = {
+  minimumAge: MINIMUM_ACCOUNT_AGE,
+  guardianConsentAge: DEFAULT_GUARDIAN_CONSENT_AGE,
+  legallyReviewed: false,
+};
 
-export function ruleFor(countryCode: string): CountryAgeRule {
-  return (
-    COUNTRY_AGE_RULES[countryCode.toUpperCase()] ?? {
-      guardianConsentAge: DEFAULT_GUARDIAN_CONSENT_AGE,
-      legallyReviewed: false,
-    }
-  );
+/**
+ * Country rules live in the `jurisdiction_rules` table so admins can configure them. A rule only
+ * applies once its legal review is recorded; an unreviewed rule falls back to the conservative default.
+ */
+export function effectiveRule(rule: CountryAgeRule | null | undefined): CountryAgeRule {
+  if (!rule || !rule.legallyReviewed) return DEFAULT_RULE;
+  return { ...rule, minimumAge: Math.max(rule.minimumAge, MINIMUM_ACCOUNT_AGE) };
 }
 
 /** Whole years between an ISO date of birth (YYYY-MM-DD) and `today`, using UTC calendar dates. */
@@ -68,10 +70,10 @@ export type AgeAssessment =
   | { eligible: false; reason: 'UNDER_MINIMUM_AGE' }
   | { eligible: true; band: AgeBand; guardianRequired: boolean; ruleReviewed: boolean };
 
-export function assessAge(dob: string, countryCode: string, today: Date): AgeAssessment {
+export function assessAge(dob: string, countryRule: CountryAgeRule | null, today: Date): AgeAssessment {
   const age = ageInYears(dob, today);
-  if (age < MINIMUM_ACCOUNT_AGE) return { eligible: false, reason: 'UNDER_MINIMUM_AGE' };
-  const rule = ruleFor(countryCode);
+  const rule = effectiveRule(countryRule);
+  if (age < rule.minimumAge) return { eligible: false, reason: 'UNDER_MINIMUM_AGE' };
   return {
     eligible: true,
     band: ageBand(age),

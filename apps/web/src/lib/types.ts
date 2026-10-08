@@ -1,0 +1,89 @@
+/** API types, inferred from the shared Zod contracts. Nothing here is declared twice. */
+import type { z } from 'zod';
+import type * as C from '@fp/contracts';
+
+export type Problem = z.infer<typeof C.Problem>;
+export type Locale = z.infer<typeof C.Locale>;
+export type Position = z.infer<typeof C.Position>;
+export type Foot = z.infer<typeof C.Foot>;
+export type SkillKey = z.infer<typeof C.SkillKey>;
+export type Bilingual = z.infer<typeof C.Bilingual>;
+export type AgeBand = z.infer<typeof C.AgeBand>;
+export type Capability = z.infer<typeof C.Capability>;
+export type CapabilityStatus = z.infer<typeof C.CapabilityStatus>;
+
+export type RegisterRequest = z.input<typeof C.RegisterRequest>;
+export type RegisterResponse = z.infer<typeof C.RegisterResponse>;
+export type GuardianInviteRequest = z.input<typeof C.GuardianInviteRequest>;
+export type GuardianInviteResponse = z.infer<typeof C.GuardianInviteResponse>;
+export type GuardianAcceptRequest = z.input<typeof C.GuardianAcceptRequest>;
+export type ConsentPurpose = z.infer<typeof C.ConsentPurpose>;
+export type ConsentRequest = z.input<typeof C.ConsentRequest>;
+export type ConsentState = z.infer<typeof C.ConsentState>;
+
+export type ProfileView = z.infer<typeof C.ProfileView>;
+export type UpdateProfileRequest = z.input<typeof C.UpdateProfileRequest>;
+export type MeView = z.infer<typeof C.MeView>;
+export type SkillView = z.infer<typeof C.SkillView>;
+export type SkillList = z.infer<typeof C.SkillList>;
+
+export type VideoContentType = z.infer<typeof C.VideoContentType>;
+export type VideoStatus = z.infer<typeof C.VideoStatus>;
+export type VideoContext = z.infer<typeof C.VideoContext>;
+export type Visibility = z.infer<typeof C.Visibility>;
+export type CreateUploadRequest = z.input<typeof C.CreateUploadRequest>;
+export type CreateUploadResponse = z.infer<typeof C.CreateUploadResponse>;
+export type UpdateVideoRequest = z.input<typeof C.UpdateVideoRequest>;
+export type VideoTag = z.infer<typeof C.VideoTag>;
+export type TagCorrectionRequest = z.input<typeof C.TagCorrectionRequest>;
+export type VideoView = z.infer<typeof C.VideoView>;
+export type VideoPage = z.infer<typeof C.VideoPage>;
+
+export type FeedTab = z.infer<typeof C.FeedTab>;
+export type FeedPage = z.infer<typeof C.FeedPage>;
+export type CreateCommentRequest = z.input<typeof C.CreateCommentRequest>;
+export type CommentView = z.infer<typeof C.CommentView>;
+export type CommentPage = z.infer<typeof C.CommentPage>;
+export type ReportReason = z.infer<typeof C.ReportReason>;
+export type ReportRequest = z.input<typeof C.ReportRequest>;
+
+export type PlayerCard = z.infer<typeof C.PlayerCard>;
+export type SearchQuery = z.input<typeof C.SearchQuery>;
+export type SearchResult = z.infer<typeof C.SearchResult>;
+export type RadarCategory = z.infer<typeof C.RadarCategory>;
+export type RadarQuery = z.input<typeof C.RadarQuery>;
+export type RadarPage = z.infer<typeof C.RadarPage>;
+export type ChallengeView = z.infer<typeof C.ChallengeView>;
+export type ChallengeList = z.infer<typeof C.ChallengeList>;
+export type CreateChallengeRequest = z.input<typeof C.CreateChallengeRequest>;
+export type EnterChallengeRequest = z.input<typeof C.EnterChallengeRequest>;
+export type DiscoverView = z.infer<typeof C.DiscoverView>;
+
+export type ScoutSearchQuery = z.input<typeof C.ScoutSearchQuery>;
+export type PlayerPage = z.infer<typeof C.PlayerPage>;
+export type ShortlistView = z.infer<typeof C.ShortlistView>;
+export type ShortlistList = z.infer<typeof C.ShortlistList>;
+export type ShortlistDetail = z.infer<typeof C.ShortlistDetail>;
+export type CreateShortlistRequest = z.input<typeof C.CreateShortlistRequest>;
+export type ScoutNoteView = z.infer<typeof C.ScoutNoteView>;
+export type ScoutNoteList = z.infer<typeof C.ScoutNoteList>;
+export type CreateScoutNoteRequest = z.input<typeof C.CreateScoutNoteRequest>;
+export type ContactRequestCreate = z.input<typeof C.ContactRequestCreate>;
+export type ContactRequestView = z.infer<typeof C.ContactRequestView>;
+export type ContactRequestList = z.infer<typeof C.ContactRequestList>;
+export type ContactResponseRequest = z.input<typeof C.ContactResponseRequest>;
+export type VerificationRequestCreate = z.input<typeof C.VerificationRequestCreate>;
+export type VerificationRequestView = z.infer<typeof C.VerificationRequestView>;
+export type VerificationRequestList = z.infer<typeof C.VerificationRequestList>;
+
+export type NotificationView = z.infer<typeof C.NotificationView>;
+export type NotificationPage = z.infer<typeof C.NotificationPage>;
+export type MarkReadRequest = z.input<typeof C.MarkReadRequest>;
+
+export type ModerationCaseView = z.infer<typeof C.ModerationCaseView>;
+export type ModerationCaseList = z.infer<typeof C.ModerationCaseList>;
+export type ModerationDecisionRequest = z.input<typeof C.ModerationDecisionRequest>;
+export type VerificationDecisionRequest = z.input<typeof C.VerificationDecisionRequest>;
+export type AuditLogView = z.infer<typeof C.AuditLogView>;
+export type AuditLogPage = z.infer<typeof C.AuditLogPage>;
+export type AdminStats = z.infer<typeof C.AdminStats>;

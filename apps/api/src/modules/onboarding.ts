@@ -16,14 +16,16 @@ const INVITATION_TTL_MS = 7 * 24 * 3600 * 1000;
 
 export const onboardingRoutes = [
   route(
-    { method: 'post', path: '/v1/onboarding/register', summary: 'Register the signed-in identity as a user', tag: 'onboarding', auth: 'identity', body: RegisterRequest, response: RegisterResponse, status: 201 },
+    { method: 'post', path: '/v1/onboarding/register', summary: 'Register the signed-in identity as a user', tag: 'onboarding', auth: 'identity', body: RegisterRequest, response: RegisterResponse, status: 201, rateLimit: { max: 10, timeWindow: '1 hour' } },
     async ({ deps, identity, actor, body }) => {
       if (!identity) throw new ApiError(401, 'UNAUTHENTICATED', 'sign in required');
       if (actor) throw conflict('ALREADY_REGISTERED', 'this account is already registered');
 
-      const age = assessAge(body.dob, body.countryCode, deps.now());
+      const rule = await deps.db.selectFrom('jurisdiction_rules').selectAll().where('country_code', '=', body.countryCode).executeTakeFirst();
+      const age = assessAge(body.dob, rule ? { minimumAge: rule.minimum_age, guardianConsentAge: rule.guardian_consent_age, legallyReviewed: rule.legally_reviewed } : null, deps.now());
       // Under-age sign-ups are refused without storing the date of birth.
-      if (!age.eligible) throw forbidden('UNDER_MINIMUM_AGE', 'you must be at least 13 to create an account');
+      if (!age.eligible) throw forbidden('UNDER_MINIMUM_AGE', 'you are below the minimum age for an account');
+      if (body.scoutApplication && isMinor(age.band)) throw forbidden('ADULTS_ONLY', 'scouts must be adults');
 
       const minor = isMinor(age.band);
       const userId = newId();
@@ -49,7 +51,15 @@ export const onboardingRoutes = [
           guardian_required: age.guardianRequired,
         }).execute();
         await tx.insertInto('profiles').values({ user_id: userId, handle: body.handle, display_name: body.displayName, region_id: country?.id ?? null }).execute();
-        await tx.insertInto('user_roles').values(body.roles.map((role) => ({ user_id: userId, role }))).execute();
+        const roles = new Set<'player' | 'fan'>(body.roles);
+        if (body.scoutApplication) roles.add('fan');
+        await tx.insertInto('user_roles').values([...roles].map((role) => ({ user_id: userId, role }))).execute();
+        if (body.scoutApplication) {
+          // The scout role itself is granted only when staff approve this request.
+          await tx.insertInto('verification_requests').values({
+            id: newId(), user_id: userId, kind: 'scout', organization: body.scoutApplication.organization, evidence: body.scoutApplication.evidence,
+          }).execute();
+        }
         if (body.roles.includes('player')) await tx.insertInto('player_profiles').values({ user_id: userId }).execute();
         // Minors start private, followers-only comments and country-level region until a guardian decides otherwise.
         await tx.insertInto('privacy_settings').values(
@@ -76,12 +86,20 @@ export const onboardingRoutes = [
     { method: 'get', path: '/v1/me', summary: 'The signed-in user', tag: 'onboarding', auth: 'user', response: MeView },
     async (ctx) => {
       const me = ctx.me();
-      const [profile, age] = await Promise.all([
+      const db = ctx.deps.db;
+      const [profile, age, scout, unread] = await Promise.all([
         profileView(ctx.deps, me, me.userId),
-        ctx.deps.db.selectFrom('age_records').select('guardian_required').where('user_id', '=', me.userId).executeTakeFirstOrThrow(),
+        db.selectFrom('age_records').select('guardian_required').where('user_id', '=', me.userId).executeTakeFirstOrThrow(),
+        db.selectFrom('verification_requests').select('status').where('user_id', '=', me.userId).where('kind', '=', 'scout').orderBy('created_at', 'desc').executeTakeFirst(),
+        db.selectFrom('notifications').select(db.fn.countAll<string>().as('n')).where('user_id', '=', me.userId).where('read_at', 'is', null).executeTakeFirstOrThrow(),
       ]);
       if (!profile) throw notFound('profile');
-      return { userId: me.userId, status: me.status, roles: [...me.roles], ageGroup: me.ageBand, guardianRequired: age.guardian_required, profile };
+      return {
+        userId: me.userId, status: me.status, roles: [...me.roles], ageGroup: me.ageBand, guardianRequired: age.guardian_required,
+        scoutApplication: (scout?.status ?? 'none') as 'none' | 'pending' | 'approved' | 'rejected',
+        unreadNotifications: Number(unread.n),
+        profile,
+      };
     },
   ),
 

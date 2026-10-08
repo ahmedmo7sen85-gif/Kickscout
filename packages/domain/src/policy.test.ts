@@ -9,7 +9,7 @@ const actor = (over: Partial<Actor> = {}): Actor => ({
   ageBand: 'adult',
   mfa: false,
   guardianOf: [],
-  consents: new Set<ConsentPurpose>(['account', 'ai_analysis']),
+  consents: new Set<ConsentPurpose>(['account', 'scout_contact']),
   ...over,
 });
 
@@ -25,27 +25,32 @@ describe('can()', () => {
     expect(can(actor({ roles: ['fan'] }), { kind: 'video.upload' }).allowed).toBe(false);
   });
 
-  it('requires AI analysis consent and ownership to request analysis', () => {
-    expect(can(actor(), { kind: 'analysis.request', videoOwnerId: 'a' }).allowed).toBe(true);
-    expect(can(actor(), { kind: 'analysis.request', videoOwnerId: 'b' }).allowed).toBe(false);
-    expect(can(actor({ consents: new Set(['account']) }), { kind: 'analysis.request', videoOwnerId: 'a' })).toMatchObject({ code: 'CONSENT_REQUIRED' });
+  it('lets only verified scouts use scout tools', () => {
+    expect(can(actor({ roles: ['fan'] }), { kind: 'scout.use' })).toMatchObject({ code: 'SCOUT_VERIFICATION_REQUIRED' });
+    expect(can(actor({ roles: ['scout'] }), { kind: 'scout.use' }).allowed).toBe(true);
   });
 
-  it("keeps a minor's analysis away from the public but open to verified scouts and guardians", () => {
-    const action = { kind: 'analysis.view', subjectId: 'kid', subjectPublic: true, subjectAgeBand: 'u16' } as const;
-    expect(can(actor({ roles: ['fan'] }), action).allowed).toBe(false);
-    expect(can(actor({ roles: ['scout'] }), action).allowed).toBe(true);
-    expect(can(actor({ roles: ['fan'], guardianOf: ['kid'] }), action).allowed).toBe(true);
+  it('lets scouts request contact only when the player (or guardian) allows it', () => {
+    const scout = actor({ userId: 's', roles: ['scout'] });
+    expect(can(scout, { kind: 'scout.contact', playerId: 'p', playerAcceptsContact: false })).toMatchObject({ code: 'CONTACT_NOT_ALLOWED' });
+    expect(can(scout, { kind: 'scout.contact', playerId: 'p', playerAcceptsContact: true }).allowed).toBe(true);
+    expect(can(actor({ roles: ['fan'] }), { kind: 'scout.contact', playerId: 'p', playerAcceptsContact: true }).allowed).toBe(false);
   });
 
-  it('only lets the claimed player confirm identity', () => {
-    expect(can(actor(), { kind: 'selection.confirm', claimedPlayerId: 'someone-else' }).allowed).toBe(false);
-    expect(can(actor(), { kind: 'selection.confirm', claimedPlayerId: 'a' }).allowed).toBe(true);
+  it('only lets the owner or guardian edit a video and its tags', () => {
+    expect(can(actor(), { kind: 'video.edit', ownerId: 'b' }).allowed).toBe(false);
+    expect(can(actor({ guardianOf: ['b'] }), { kind: 'video.edit', ownerId: 'b' }).allowed).toBe(true);
+  });
+
+  it('requires admin and MFA to decide verifications', () => {
+    expect(can(actor({ roles: ['moderator'], mfa: true }), { kind: 'verification.decide' }).allowed).toBe(false);
+    expect(can(actor({ roles: ['admin'] }), { kind: 'verification.decide' })).toMatchObject({ code: 'MFA_REQUIRED' });
+    expect(can(actor({ roles: ['admin'], mfa: true }), { kind: 'verification.decide' }).allowed).toBe(true);
   });
 
   it('makes a guardian grant a minor’s consents', () => {
-    expect(can(actor({ ageBand: 'u16' }), { kind: 'consent.grant', subjectId: 'a', purpose: 'ai_analysis' })).toMatchObject({ code: 'GUARDIAN_REQUIRED' });
-    expect(can(actor({ userId: 'g', guardianOf: ['a'] }), { kind: 'consent.grant', subjectId: 'a', purpose: 'ai_analysis' }).allowed).toBe(true);
+    expect(can(actor({ ageBand: 'u16' }), { kind: 'consent.grant', subjectId: 'a', purpose: 'scout_contact' })).toMatchObject({ code: 'GUARDIAN_REQUIRED' });
+    expect(can(actor({ userId: 'g', guardianOf: ['a'] }), { kind: 'consent.grant', subjectId: 'a', purpose: 'scout_contact' }).allowed).toBe(true);
   });
 
   it('requires MFA for admin access', () => {

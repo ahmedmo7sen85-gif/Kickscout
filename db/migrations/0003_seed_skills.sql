@@ -1,0 +1,22 @@
+-- The skill taxonomy from the KICKSCOUT spec. AI tags and user tags both use these keys.
+INSERT INTO skills (key, category, names, sort_order) VALUES
+  ('dribbling',     'dribbling',   '{"en":"Dribbling","ar":"المراوغة"}', 1),
+  ('elastico',      'dribbling',   '{"en":"Elastico","ar":"إلاستيكو"}', 2),
+  ('step_over',     'dribbling',   '{"en":"Step-over","ar":"الخطوة فوق الكرة"}', 3),
+  ('rainbow_flick', 'freestyle',   '{"en":"Rainbow Flick","ar":"قوس قزح"}', 4),
+  ('cruyff_turn',   'dribbling',   '{"en":"Cruyff Turn","ar":"دوران كرويف"}', 5),
+  ('roulette',      'dribbling',   '{"en":"Roulette","ar":"الروليت"}', 6),
+  ('nutmeg',        'dribbling',   '{"en":"Nutmeg","ar":"الكوبري"}', 7),
+  ('ball_control',  'control',     '{"en":"Ball Control","ar":"التحكم بالكرة"}', 8),
+  ('first_touch',   'control',     '{"en":"First Touch","ar":"اللمسة الأولى"}', 9),
+  ('juggling',      'freestyle',   '{"en":"Juggling","ar":"تنطيط الكرة"}', 10),
+  ('passing',       'passing',     '{"en":"Passing","ar":"التمرير"}', 11),
+  ('crossing',      'passing',     '{"en":"Crossing","ar":"العرضيات"}', 12),
+  ('shooting',      'shooting',    '{"en":"Shooting","ar":"التسديد"}', 13),
+  ('free_kick',     'shooting',    '{"en":"Free Kick","ar":"الركلة الحرة"}', 14),
+  ('volley',        'shooting',    '{"en":"Volley","ar":"الطائرة"}', 15),
+  ('speed',         'athletic',    '{"en":"Speed","ar":"السرعة"}', 16),
+  ('one_v_one',     'dribbling',   '{"en":"1v1","ar":"واحد ضد واحد"}', 17),
+  ('freestyle',     'freestyle',   '{"en":"Freestyle","ar":"الفريستايل"}', 18),
+  ('defending',     'defending',   '{"en":"Defending","ar":"الدفاع"}', 19),
+  ('goalkeeping',   'goalkeeping', '{"en":"Goalkeeping","ar":"حراسة المرمى"}', 20);

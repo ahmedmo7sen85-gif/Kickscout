@@ -1,15 +1,21 @@
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
-import { CreateAnalysisRequest, CreateUploadRequest, RegisterRequest, buildOpenApi } from './index.js';
+import { CreateUploadRequest, RegisterRequest, buildOpenApi } from './index.js';
 
 describe('contracts', () => {
-  it('rejects a selection box that leaves the frame', () => {
-    expect(CreateAnalysisRequest.safeParse({ frameMs: 0, box: { x: 0.9, y: 0, w: 0.2, h: 0.2 } }).success).toBe(false);
-    expect(CreateAnalysisRequest.parse({ frameMs: 0, box: { x: 0.4, y: 0.2, w: 0.1, h: 0.3 } }).tier).toBe('basic');
+  it('normalises hashtags and rejects junk', () => {
+    const base = { title: 'Elastico', contentType: 'video/mp4', sizeBytes: 1000 };
+    expect(CreateUploadRequest.parse({ ...base, hashtags: ['#Skills', 'مهارات'] }).hashtags).toEqual(['skills', 'مهارات']);
+    expect(CreateUploadRequest.safeParse({ ...base, hashtags: ['no spaces'] }).success).toBe(false);
+  });
+
+  it('rejects a trim that ends before it starts', () => {
+    const base = { title: 'x', contentType: 'video/mp4', sizeBytes: 1000 };
+    expect(CreateUploadRequest.safeParse({ ...base, trimStartMs: 5000, trimEndMs: 1000 }).success).toBe(false);
   });
 
   it('accepts only the supported video formats and sizes', () => {
-    const base = { sizeBytes: 1000, videoType: 'match', subject: 'me' };
+    const base = { sizeBytes: 1000, title: 'Goal' };
     expect(CreateUploadRequest.safeParse({ ...base, contentType: 'video/mp4' }).success).toBe(true);
     expect(CreateUploadRequest.safeParse({ ...base, contentType: 'video/x-msvideo' }).success).toBe(false);
     expect(CreateUploadRequest.safeParse({ ...base, contentType: 'video/mp4', sizeBytes: 10 ** 10 }).success).toBe(false);

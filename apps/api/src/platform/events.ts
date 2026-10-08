@@ -1,5 +1,6 @@
 import type { Transaction } from 'kysely';
-import type { DB } from '../db/types.js';
+import type { DB } from '@fp/db';
+import { newId } from './ids.js';
 
 /**
  * Transactional outbox: events are written in the same transaction as the change they describe,
@@ -24,4 +25,14 @@ export async function audit(
       metadata: JSON.stringify(entry.metadata ?? {}),
     })
     .execute();
+}
+
+/** Queues background work for the worker (see apps/worker). Written in the caller's transaction. */
+export async function enqueue(tx: Transaction<DB>, kind: string, payload: Record<string, unknown>) {
+  await tx.insertInto('jobs').values({ kind, payload: JSON.stringify(payload) }).execute();
+}
+
+/** In-app notification, written in the caller's transaction. */
+export async function notify(tx: Transaction<DB>, userId: string, kind: string, payload: Record<string, unknown> = {}) {
+  await tx.insertInto('notifications').values({ id: newId(), user_id: userId, kind, payload: JSON.stringify(payload) }).execute();
 }

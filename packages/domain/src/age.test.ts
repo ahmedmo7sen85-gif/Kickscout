@@ -20,12 +20,24 @@ describe('age rules', () => {
   });
 
   it('refuses accounts under the minimum age', () => {
-    expect(assessAge('2015-01-01', 'EG', today)).toEqual({ eligible: false, reason: 'UNDER_MINIMUM_AGE' });
+    expect(assessAge('2015-01-01', null, today)).toEqual({ eligible: false, reason: 'UNDER_MINIMUM_AGE' });
   });
 
   it('requires guardian consent for every minor until a country rule is legally reviewed', () => {
-    const r = assessAge('2009-06-01', 'EG', today);
+    const r = assessAge('2009-06-01', null, today);
     expect(r).toMatchObject({ eligible: true, band: 'u18', guardianRequired: true, ruleReviewed: false });
-    expect(assessAge('2000-01-01', 'SA', today)).toMatchObject({ band: 'adult', guardianRequired: false });
+    expect(assessAge('2000-01-01', null, today)).toMatchObject({ band: 'adult', guardianRequired: false });
+  });
+
+  it('ignores a configured country rule until its legal review is recorded', () => {
+    const unreviewed = { minimumAge: 13, guardianConsentAge: 16, legallyReviewed: false };
+    expect(assessAge('2009-06-01', unreviewed, today)).toMatchObject({ guardianRequired: true, ruleReviewed: false });
+    const reviewed = { ...unreviewed, legallyReviewed: true };
+    expect(assessAge('2009-06-01', reviewed, today)).toMatchObject({ band: 'u18', guardianRequired: false, ruleReviewed: true });
+  });
+
+  it('never lets a country rule lower the minimum age below 13', () => {
+    const lax = { minimumAge: 10, guardianConsentAge: 16, legallyReviewed: true };
+    expect(assessAge('2014-06-01', lax, today)).toEqual({ eligible: false, reason: 'UNDER_MINIMUM_AGE' });
   });
 });

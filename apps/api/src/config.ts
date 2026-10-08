@@ -11,13 +11,19 @@ const Env = z
     S3_REGION: z.string().default('eu-central-1'),
     S3_ENDPOINT: z.url().optional(),
     S3_BUCKET_ORIGINALS: z.string().min(1),
+    S3_FORCE_PATH_STYLE: z.enum(['true', 'false']).default('true').transform((v) => v === 'true'),
+    /** Leave unset on AWS to use the default credential chain. Never sent to the browser. */
+    S3_ACCESS_KEY_ID: z.string().optional(),
+    S3_SECRET_ACCESS_KEY: z.string().optional(),
     CDN_BASE_URL: z.url(),
     /** base64-encoded 32-byte key for date-of-birth encryption. */
     DOB_ENCRYPTION_KEY: z.string().refine((k) => Buffer.from(k, 'base64').length === 32, 'must be 32 bytes, base64'),
-    /** Shared secret for internal callbacks from the media and AI services. */
-    INTERNAL_SERVICE_TOKEN: z.string().min(32),
+    /** Secret for hashing signed-out viewers into daily view counts (no raw IPs are stored). */
+    VIEWER_HASH_SECRET: z.string().min(32),
     MAILER: z.enum(['log', 'ses']).default('log'),
     POLICY_VERSION: z.string().default('2026-10-draft'),
+    /** Comma-separated origins allowed to call the API from a browser (the web app). */
+    CORS_ORIGINS: z.string().default('http://localhost:3000'),
   })
   .refine((e) => !(e.NODE_ENV === 'production' && e.MAILER === 'log'), {
     message: 'MAILER=log is for development only; configure a real mailer in production',

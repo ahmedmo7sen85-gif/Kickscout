@@ -1,0 +1,6 @@
+.next/
+out/
+.screenshots/
+test-results/
+playwright-report/
+*.tsbuildinfo

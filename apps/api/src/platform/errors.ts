@@ -46,5 +46,5 @@ export function problemHandler(err: FastifyError | Error, req: FastifyRequest, r
   return reply
     .status(status)
     .type('application/problem+json')
-    .send({ type: `https://errors.football-platform.dev/${code.toLowerCase()}`, title: TITLES[status] ?? 'Error', status, code, detail, traceId: req.id, errors });
+    .send({ type: `urn:kickscout:error:${code.toLowerCase()}`, title: TITLES[status] ?? 'Error', status, code, detail, traceId: req.id, errors });
 }

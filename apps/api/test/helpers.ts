@@ -3,9 +3,9 @@ import pg from 'pg';
 import { SignJWT, createLocalJWKSet, exportJWK, generateKeyPair } from 'jose';
 import type { FastifyInstance } from 'fastify';
 import { buildApp } from '../src/app.js';
-import { createDb } from '../src/db/db.js';
-import type { Database } from '../src/db/db.js';
-import { migrate } from '../src/db/migrate.js';
+import { createDb } from '@fp/db';
+import type { Database } from '@fp/db';
+import { migrate } from '@fp/db';
 import { JwtVerifier } from '../src/platform/auth.js';
 import type { ObjectStorage } from '../src/platform/storage.js';
 import type { Mailer } from '../src/platform/mailer.js';
@@ -14,8 +14,7 @@ import type { Deps } from '../src/deps.js';
 
 const ADMIN_URL = process.env.TEST_DATABASE_ADMIN_URL ?? 'postgres://fp:fp@localhost:5432/postgres';
 const ISSUER = 'https://idp.test/';
-const AUDIENCE = 'football-api';
-export const SERVICE_TOKEN = randomBytes(32).toString('hex');
+const AUDIENCE = 'authenticated';
 
 /** Test double for object storage: records presigned uploads and lets a test "upload" a file. */
 export class MemoryStorage implements ObjectStorage {
@@ -40,7 +39,7 @@ export interface TestEnv {
   db: Database;
   storage: MemoryStorage;
   mailer: RecordingMailer;
-  token(sub: string, claims?: { email?: string; email_verified?: boolean; amr?: string[] }): Promise<string>;
+  token(sub: string, claims?: { email?: string; email_verified?: boolean; amr?: unknown[]; aal?: string }): Promise<string>;
   close(): Promise<void>;
 }
 
@@ -52,6 +51,7 @@ export async function createTestEnv(): Promise<TestEnv> {
   const url = new URL(ADMIN_URL);
   url.pathname = `/${dbName}`;
   await migrate(url.toString());
+  process.env.__TEST_DB_URL__ = url.toString();
 
   const { publicKey, privateKey } = await generateKeyPair('RS256');
   const jwk = { ...(await exportJWK(publicKey)), kid: 'test', alg: 'RS256' };
@@ -62,8 +62,9 @@ export async function createTestEnv(): Promise<TestEnv> {
   const mailer = new RecordingMailer();
   const config = {
     NODE_ENV: 'test', PORT: 0, DATABASE_URL: url.toString(), AUTH_JWKS_URL: 'https://idp.test/jwks', AUTH_ISSUER: ISSUER,
-    AUTH_AUDIENCE: AUDIENCE, S3_REGION: 'eu-central-1', S3_BUCKET_ORIGINALS: 'test', CDN_BASE_URL: 'https://cdn.test',
-    DOB_ENCRYPTION_KEY: randomBytes(32).toString('base64'), INTERNAL_SERVICE_TOKEN: SERVICE_TOKEN, MAILER: 'log', POLICY_VERSION: 'test-1',
+    AUTH_AUDIENCE: AUDIENCE, S3_REGION: 'eu-central-1', S3_BUCKET_ORIGINALS: 'test', S3_FORCE_PATH_STYLE: true, CDN_BASE_URL: 'https://cdn.test',
+    DOB_ENCRYPTION_KEY: randomBytes(32).toString('base64'), VIEWER_HASH_SECRET: randomBytes(32).toString('hex'), MAILER: 'log', POLICY_VERSION: 'test-1',
+    CORS_ORIGINS: 'https://web.test',
   } satisfies Config;
   const deps: Deps = { config, db, verifier, storage, mailer, dobKey: Buffer.from(config.DOB_ENCRYPTION_KEY, 'base64'), now: () => new Date() };
   const app = await buildApp(deps, { logger: false });

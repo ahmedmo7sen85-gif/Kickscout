@@ -4,9 +4,9 @@
 import { isMinor } from './age.js';
 import type { AgeBand } from './age.js';
 
-export type Role = 'player' | 'fan' | 'creator' | 'coach' | 'scout' | 'academy' | 'club' | 'moderator' | 'admin';
+export type Role = 'player' | 'fan' | 'scout' | 'moderator' | 'admin';
 export type UserStatus = 'pending_consent' | 'active' | 'suspended' | 'deleted';
-export type ConsentPurpose = 'account' | 'public_profile' | 'ai_analysis' | 'model_training' | 'leaderboards' | 'scout_contact';
+export type ConsentPurpose = 'account' | 'public_profile' | 'scout_contact' | 'model_training';
 
 export interface Actor {
   userId: string;
@@ -23,23 +23,26 @@ export interface Actor {
 export type Action =
   | { kind: 'video.upload' }
   | { kind: 'video.delete'; ownerId: string }
-  | { kind: 'analysis.request'; videoOwnerId: string }
-  | { kind: 'analysis.view'; subjectId: string; subjectPublic: boolean; subjectAgeBand: AgeBand }
-  | { kind: 'selection.confirm'; claimedPlayerId: string }
+  | { kind: 'video.edit'; ownerId: string }
+  | { kind: 'scout.use' }
+  | { kind: 'scout.contact'; playerId: string; playerAcceptsContact: boolean }
+  | { kind: 'challenge.enter'; videoOwnerId: string }
   | { kind: 'profile.update'; subjectId: string }
   | { kind: 'comment.create'; videoOwnerId: string; commentsSetting: 'everyone' | 'followers' | 'off'; isFollower: boolean; blocked: boolean }
   | { kind: 'social.engage' }
   | { kind: 'report.create' }
   | { kind: 'consent.grant'; subjectId: string; purpose: ConsentPurpose }
   | { kind: 'admin.access' }
-  | { kind: 'moderation.act' };
+  | { kind: 'moderation.act' }
+  | { kind: 'verification.decide' }
+  | { kind: 'challenge.manage' };
 
 export type Decision = { allowed: true } | { allowed: false; code: string; reason: string };
 
 const allow: Decision = { allowed: true };
 const deny = (code: string, reason: string): Decision => ({ allowed: false, code, reason });
 
-const UPLOAD_ROLES: ReadonlySet<Role> = new Set(['player', 'creator', 'coach', 'academy', 'club']);
+const UPLOAD_ROLES: ReadonlySet<Role> = new Set(['player']);
 
 const has = (a: Actor, r: Role) => a.roles.includes(r);
 const isStaff = (a: Actor) => has(a, 'admin') || has(a, 'moderator');
@@ -60,24 +63,21 @@ export function can(actor: Actor, action: Action): Decision {
     case 'video.delete':
       return isSelfOrGuardian(actor, action.ownerId) || isStaff(actor) ? allow : deny('FORBIDDEN', 'not the owner');
 
-    case 'analysis.request':
-      if (!isSelfOrGuardian(actor, action.videoOwnerId)) return deny('FORBIDDEN', 'only the uploader can request analysis');
-      return actor.consents.has('ai_analysis') ? allow : deny('CONSENT_REQUIRED', 'AI analysis consent is not granted');
+    case 'video.edit':
+      return isSelfOrGuardian(actor, action.ownerId) ? allow : deny('FORBIDDEN', 'not the owner');
 
-    case 'analysis.view':
-      if (isSelfOrGuardian(actor, action.subjectId) || has(actor, 'admin')) return allow;
-      if (!action.subjectPublic) return deny('FORBIDDEN', 'analysis is private');
-      // Minors' analyses are visible to verified scouts only, never to the general public.
-      if (isMinor(action.subjectAgeBand)) {
-        return has(actor, 'scout') || has(actor, 'academy') || has(actor, 'club')
-          ? allow
-          : deny('FORBIDDEN', "a minor's analysis is not public");
-      }
-      return allow;
+    case 'challenge.enter':
+      return isSelfOrGuardian(actor, action.videoOwnerId) ? allow : deny('FORBIDDEN', 'only the uploader can enter a challenge');
 
-    case 'selection.confirm':
-      // Identity is never inferred: only the claimed player (or their guardian) can confirm it is them.
-      return isSelfOrGuardian(actor, action.claimedPlayerId) ? allow : deny('FORBIDDEN', 'only the player can confirm');
+    case 'scout.use':
+      // The scout role exists only after staff approve a verification request.
+      return has(actor, 'scout') || has(actor, 'admin') ? allow : deny('SCOUT_VERIFICATION_REQUIRED', 'verified scouts only');
+
+    case 'scout.contact':
+      if (!has(actor, 'scout')) return deny('SCOUT_VERIFICATION_REQUIRED', 'verified scouts only');
+      if (actor.userId === action.playerId) return deny('FORBIDDEN', 'cannot contact yourself');
+      // For a minor this consent can only have come from their guardian (see consent.grant).
+      return action.playerAcceptsContact ? allow : deny('CONTACT_NOT_ALLOWED', 'this player does not accept scout contact');
 
     case 'profile.update':
       return isSelfOrGuardian(actor, action.subjectId) || has(actor, 'admin') ? allow : deny('FORBIDDEN', 'not your profile');
@@ -108,5 +108,10 @@ export function can(actor: Actor, action: Action): Decision {
     case 'moderation.act':
       if (!isStaff(actor)) return deny('FORBIDDEN', 'moderators only');
       return actor.mfa ? allow : deny('MFA_REQUIRED', 'moderation requires MFA');
+
+    case 'verification.decide':
+    case 'challenge.manage':
+      if (!has(actor, 'admin')) return deny('FORBIDDEN', 'admins only');
+      return actor.mfa ? allow : deny('MFA_REQUIRED', 'admin actions require MFA');
   }
 }

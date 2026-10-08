@@ -32,12 +32,15 @@ export class JwtVerifier implements TokenVerifier {
       algorithms: ['RS256', 'ES256'],
     });
     if (!payload.sub) throw new Error('token has no subject');
-    const amr = Array.isArray(payload.amr) ? (payload.amr as unknown[]) : [];
+    // amr is a list of strings (OIDC) or of {method} objects (Supabase Auth); Supabase also sets aal.
+    const amr = (Array.isArray(payload.amr) ? (payload.amr as unknown[]) : [])
+      .map((m) => (typeof m === 'string' ? m : typeof m === 'object' && m && 'method' in m ? String((m as { method: unknown }).method) : ''));
+    const meta = (payload.user_metadata ?? {}) as Record<string, unknown>;
     return {
       subject: payload.sub,
       email: typeof payload.email === 'string' ? payload.email : null,
-      emailVerified: payload.email_verified === true,
-      mfa: amr.includes('mfa') || amr.includes('otp') || amr.includes('hwk'),
+      emailVerified: payload.email_verified === true || meta.email_verified === true,
+      mfa: payload.aal === 'aal2' || amr.some((m) => ['mfa', 'otp', 'totp', 'hwk'].includes(m)),
     };
   }
 }

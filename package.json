@@ -1,13 +1,15 @@
 {
-  "name": "football-platform",
+  "name": "kickscout",
   "private": true,
   "packageManager": "pnpm@10.28.0",
-  "engines": { "node": ">=22" },
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "build": "turbo run build",
     "typecheck": "turbo run typecheck",
     "test": "turbo run test",
-    "db:migrate": "pnpm --filter @fp/api db:migrate",
+    "db:migrate": "pnpm --filter @fp/db migrate",
     "openapi": "pnpm --filter @fp/api openapi"
   },
   "devDependencies": {

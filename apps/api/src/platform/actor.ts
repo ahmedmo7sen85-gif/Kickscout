@@ -1,6 +1,6 @@
 import { sql } from 'kysely';
 import type { Actor, AgeBand, ConsentPurpose, Role, UserStatus } from '@fp/domain';
-import type { Database } from '../db/db.js';
+import type { Database } from '@fp/db';
 import type { Identity } from './auth.js';
 
 /** Current consents for a subject: the latest decision per purpose, granted ones only. */

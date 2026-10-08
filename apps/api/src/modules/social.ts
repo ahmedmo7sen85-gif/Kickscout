@@ -1,39 +1,61 @@
 import { z } from 'zod';
-import { CommentPage, CommentView, CreateCommentRequest, ReportRequest } from '@fp/contracts';
+import { CommentPage, CommentView, CreateCommentRequest, CursorQuery, ReportRequest, VideoPage } from '@fp/contracts';
 import { isMinor } from '@fp/domain';
 import { route } from '../platform/route.js';
 import { ApiError, notFound } from '../platform/errors.js';
 import { newId } from '../platform/ids.js';
-import { audit, emit } from '../platform/events.js';
+import { audit, emit, notify } from '../platform/events.js';
+import { openCase } from './moderation.js';
 import { moderateComment } from '../platform/moderation.js';
 import { ageBandOf } from '../platform/actor.js';
-import { visibleVideo } from './media.js';
+import { blockedEitherWay, pageOfVideos, videoQuery, visibleVideo } from './media.js';
 
 const UserIdParam = z.uuid();
 
-async function isBlockedEitherWay(db: import('../db/db.js').Database, a: string, b: string) {
-  const row = await db.selectFrom('blocks').select('blocker_id')
-    .where((eb) => eb.or([
-      eb.and([eb('blocker_id', '=', a), eb('blocked_id', '=', b)]),
-      eb.and([eb('blocker_id', '=', b), eb('blocked_id', '=', a)]),
-    ])).executeTakeFirst();
-  return Boolean(row);
-}
-
 export const socialRoutes = [
   route(
-    { method: 'put', path: '/v1/videos/:videoId/like', summary: 'Like a video', tag: 'social', auth: 'user', status: 204 },
+    { method: 'put', path: '/v1/videos/:videoId/like', summary: 'Like a video', tag: 'social', auth: 'user', status: 204, rateLimit: { max: 120, timeWindow: '1 minute' } },
     async (ctx) => {
       ctx.authorize({ kind: 'social.engage' });
       const { row } = await visibleVideo(ctx.deps, ctx.actor, ctx.params.videoId!);
-      await ctx.deps.db.insertInto('likes').values({ user_id: ctx.me().userId, video_id: row.id })
-        .onConflict((oc) => oc.columns(['video_id', 'user_id']).doNothing()).execute();
+      const me = ctx.me();
+      await ctx.deps.db.transaction().execute(async (tx) => {
+        const res = await tx.insertInto('likes').values({ user_id: me.userId, video_id: row.id })
+          .onConflict((oc) => oc.columns(['video_id', 'user_id']).doNothing()).returning('video_id').executeTakeFirst();
+        if (res && row.owner_user_id !== me.userId) await notify(tx, row.owner_user_id, 'like', { videoId: row.id, userId: me.userId });
+      });
     },
   ),
   route(
     { method: 'delete', path: '/v1/videos/:videoId/like', summary: 'Remove a like', tag: 'social', auth: 'user', status: 204 },
     async (ctx) => {
       await ctx.deps.db.deleteFrom('likes').where('user_id', '=', ctx.me().userId).where('video_id', '=', z.uuid().parse(ctx.params.videoId)).execute();
+    },
+  ),
+
+  route(
+    { method: 'put', path: '/v1/videos/:videoId/save', summary: 'Save a video', tag: 'social', auth: 'user', status: 204 },
+    async (ctx) => {
+      ctx.authorize({ kind: 'social.engage' });
+      const { row } = await visibleVideo(ctx.deps, ctx.actor, ctx.params.videoId!);
+      await ctx.deps.db.insertInto('saves').values({ user_id: ctx.me().userId, video_id: row.id })
+        .onConflict((oc) => oc.columns(['user_id', 'video_id']).doNothing()).execute();
+    },
+  ),
+  route(
+    { method: 'delete', path: '/v1/videos/:videoId/save', summary: 'Remove a save', tag: 'social', auth: 'user', status: 204 },
+    async (ctx) => {
+      await ctx.deps.db.deleteFrom('saves').where('user_id', '=', ctx.me().userId).where('video_id', '=', z.uuid().parse(ctx.params.videoId)).execute();
+    },
+  ),
+  route(
+    { method: 'get', path: '/v1/me/saves', summary: 'Videos I saved', tag: 'social', auth: 'user', query: CursorQuery, response: VideoPage },
+    async (ctx) => {
+      const me = ctx.me();
+      const q = videoQuery(ctx.deps.db)
+        .where('videos.id', 'in', (eb) => eb.selectFrom('saves').select('video_id').where('user_id', '=', me.userId))
+        .where('videos.status', '=', 'published');
+      return pageOfVideos(ctx.deps, me, q, ctx.query);
     },
   ),
 
@@ -45,9 +67,12 @@ export const socialRoutes = [
       const target = UserIdParam.parse(ctx.params.userId);
       if (target === me.userId) throw new ApiError(400, 'SELF_FOLLOW', 'you cannot follow yourself');
       const exists = await ctx.deps.db.selectFrom('users').select('id').where('id', '=', target).where('status', '=', 'active').executeTakeFirst();
-      if (!exists || (await isBlockedEitherWay(ctx.deps.db, me.userId, target))) throw notFound('user');
-      await ctx.deps.db.insertInto('follows').values({ follower_id: me.userId, followee_id: target })
-        .onConflict((oc) => oc.columns(['follower_id', 'followee_id']).doNothing()).execute();
+      if (!exists || (await blockedEitherWay(ctx.deps.db, me.userId, target))) throw notFound('user');
+      await ctx.deps.db.transaction().execute(async (tx) => {
+        const res = await tx.insertInto('follows').values({ follower_id: me.userId, followee_id: target })
+          .onConflict((oc) => oc.columns(['follower_id', 'followee_id']).doNothing()).returning('followee_id').executeTakeFirst();
+        if (res) await notify(tx, target, 'follow', { userId: me.userId });
+      });
     },
   ),
   route(
@@ -88,7 +113,7 @@ export const socialRoutes = [
     },
   ),
   route(
-    { method: 'post', path: '/v1/videos/:videoId/comments', summary: 'Comment on a video', tag: 'social', auth: 'user', body: CreateCommentRequest, response: CommentView, status: 201 },
+    { method: 'post', path: '/v1/videos/:videoId/comments', summary: 'Comment on a video', tag: 'social', auth: 'user', body: CreateCommentRequest, response: CommentView, status: 201, rateLimit: { max: 30, timeWindow: '10 minutes' } },
     async (ctx) => {
       const me = ctx.me();
       const { row, relation } = await visibleVideo(ctx.deps, me, ctx.params.videoId!);
@@ -98,7 +123,7 @@ export const socialRoutes = [
         commentsSetting: row.comments_setting as 'everyone' | 'followers' | 'off',
         isFollower: relation === 'guardian' || Boolean(await ctx.deps.db.selectFrom('follows').select('follower_id')
           .where('follower_id', '=', me.userId).where('followee_id', '=', row.owner_user_id).executeTakeFirst()),
-        blocked: await isBlockedEitherWay(ctx.deps.db, me.userId, row.owner_user_id),
+        blocked: await blockedEitherWay(ctx.deps.db, me.userId, row.owner_user_id),
       });
       const ownerBand = await ageBandOf(ctx.deps.db, row.owner_user_id);
       const verdict = moderateComment(ctx.body.body, { onMinorsContent: ownerBand ? isMinor(ownerBand) : true });
@@ -108,7 +133,11 @@ export const socialRoutes = [
         const c = await tx.insertInto('comments').values({
           id, video_id: row.id, author_id: me.userId, parent_id: ctx.body.parentId ?? null, body: ctx.body.body, moderation: verdict.status,
         }).returning(['created_at']).executeTakeFirstOrThrow();
-        if (verdict.status === 'held') await emit(tx, 'comment.held', { commentId: id, reasons: verdict.reasons });
+        if (verdict.status === 'held') {
+          await openCase(tx, { targetKind: 'comment', targetId: id, source: 'rules', categories: verdict.reasons, priority: ownerBand && isMinor(ownerBand) ? 0 : 2 });
+        } else if (row.owner_user_id !== me.userId) {
+          await notify(tx, row.owner_user_id, 'comment', { videoId: row.id, commentId: id });
+        }
         return c;
       });
       return { id, author: { userId: me.userId, handle }, body: ctx.body.body, status: verdict.status, createdAt: created.created_at.toISOString() };
@@ -116,7 +145,7 @@ export const socialRoutes = [
   ),
 
   route(
-    { method: 'post', path: '/v1/reports', summary: 'Report a video, comment or user', tag: 'safety', auth: 'user', body: ReportRequest, status: 202 },
+    { method: 'post', path: '/v1/reports', summary: 'Report a video, comment or user', tag: 'safety', auth: 'user', body: ReportRequest, status: 202, rateLimit: { max: 30, timeWindow: '1 hour' } },
     async (ctx) => {
       ctx.authorize({ kind: 'report.create' });
       const { targetKind, targetId, reason, details } = ctx.body;
@@ -128,9 +157,12 @@ export const socialRoutes = [
       const band = ownerId ? await ageBandOf(ctx.deps.db, ownerId) : null;
       const priority = reason === 'child_safety' || (band && isMinor(band)) ? 0 : reason === 'violence' || reason === 'hate' ? 1 : 2;
 
+      if (!ownerId) throw notFound(targetKind);
       await ctx.deps.db.transaction().execute(async (tx) => {
         const id = newId();
         await tx.insertInto('reports').values({ id, reporter_id: ctx.me().userId, target_kind: targetKind, target_id: targetId, reason, details: details ?? null, priority }).execute();
+        // Reports about the same target share one open case, which climbs the queue as reports arrive.
+        await openCase(tx, { targetKind, targetId, source: 'report', categories: [reason], priority, reports: 1 });
         await audit(tx, { actorId: ctx.me().userId, action: 'report.created', targetKind, targetId, metadata: { reason, priority } });
         await emit(tx, 'report.created', { reportId: id, priority });
       });

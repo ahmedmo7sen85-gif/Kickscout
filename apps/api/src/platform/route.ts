@@ -4,7 +4,6 @@ import type { Actor, Action } from '@fp/domain';
 import { can } from '@fp/domain';
 import type { RouteSpec } from '@fp/contracts';
 import { ApiError } from './errors.js';
-import { safeEqual } from './crypto.js';
 import { loadActor } from './actor.js';
 import type { Identity } from './auth.js';
 import type { Deps } from '../deps.js';
@@ -15,9 +14,8 @@ import type { Deps } from '../deps.js';
  * - identity: a valid token, user may not be registered yet (registration only)
  * - user: a registered user; `actor` is loaded from the database
  * - optional: like user when a token is present, anonymous otherwise
- * - service: internal callbacks from the media and AI services (shared secret)
  */
-export type AuthMode = 'none' | 'identity' | 'user' | 'optional' | 'service';
+export type AuthMode = 'none' | 'identity' | 'user' | 'optional';
 
 type Out<T> = T extends z.ZodType ? z.output<T> : undefined;
 type In<T> = T extends z.ZodType ? z.input<T> : void;
@@ -36,20 +34,27 @@ export interface Ctx<Q, B> {
   authorize(action: Action): void;
 }
 
+export interface RateLimit {
+  max: number;
+  timeWindow: string;
+}
+
 export interface ApiRoute extends Omit<RouteSpec, 'auth'> {
   auth: AuthMode;
+  /** Stricter per-route limit on top of the global one (uploads, comments, reports, contact). */
+  rateLimit?: RateLimit;
   handler: (ctx: Ctx<any, any>) => Promise<unknown>;
 }
 
 export function route<QS extends z.ZodObject | undefined, BS extends z.ZodType | undefined, RS extends z.ZodType | undefined>(
-  spec: Omit<RouteSpec, 'auth' | 'query' | 'body' | 'response'> & { auth: AuthMode; query?: QS; body?: BS; response?: RS },
+  spec: Omit<RouteSpec, 'auth' | 'query' | 'body' | 'response'> & { auth: AuthMode; query?: QS; body?: BS; response?: RS; rateLimit?: RateLimit },
   handler: (ctx: Ctx<Out<QS>, Out<BS>>) => Promise<In<RS>>,
 ): ApiRoute {
   return { ...spec, handler } as ApiRoute;
 }
 
 export function toRouteSpec(r: ApiRoute): RouteSpec {
-  const { handler: _h, auth, ...rest } = r;
+  const { handler: _h, auth, rateLimit: _r, ...rest } = r;
   return { ...rest, auth: auth !== 'none' };
 }
 
@@ -65,14 +70,12 @@ export function register(app: FastifyInstance, deps: Deps, routes: readonly ApiR
     app.route({
       method: r.method.toUpperCase() as 'GET',
       url: r.path,
+      ...(r.rateLimit ? { config: { rateLimit: r.rateLimit } } : {}),
       handler: async (req, reply) => {
         let identity: Identity | null = null;
         let actor: Actor | null = null;
 
-        if (r.auth === 'service') {
-          const token = bearer(req);
-          if (!token || !safeEqual(token, deps.config.INTERNAL_SERVICE_TOKEN)) throw new ApiError(401, 'UNAUTHENTICATED', 'service token required');
-        } else if (r.auth !== 'none') {
+        if (r.auth !== 'none') {
           const token = bearer(req);
           if (token) {
             try {

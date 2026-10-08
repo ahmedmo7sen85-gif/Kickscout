@@ -4,7 +4,7 @@
  */
 import { isMinor } from './age.js';
 import type { AgeBand } from './age.js';
-import type { Position } from './frameworks.js';
+import type { Position } from './taxonomy.js';
 
 export type Relation = 'self' | 'guardian' | 'admin' | 'moderator' | 'verified_scout' | 'follower' | 'public';
 export type RegionPrecision = 'macro' | 'country' | 'city';

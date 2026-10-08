@@ -16,8 +16,16 @@ export interface ObjectStorage {
 export class S3Storage implements ObjectStorage {
   private readonly client: S3Client;
 
-  constructor(private readonly bucket: string, region: string, endpoint?: string) {
-    this.client = new S3Client({ region, ...(endpoint ? { endpoint, forcePathStyle: true } : {}) });
+  /** Works with any S3-compatible store: AWS S3, Supabase Storage (S3 API), Cloudflare R2, MinIO. */
+  constructor(
+    private readonly bucket: string,
+    opts: { region: string; endpoint?: string; forcePathStyle?: boolean; accessKeyId?: string; secretAccessKey?: string },
+  ) {
+    this.client = new S3Client({
+      region: opts.region,
+      ...(opts.endpoint ? { endpoint: opts.endpoint, forcePathStyle: opts.forcePathStyle ?? true } : {}),
+      ...(opts.accessKeyId && opts.secretAccessKey ? { credentials: { accessKeyId: opts.accessKeyId, secretAccessKey: opts.secretAccessKey } } : {}),
+    });
   }
 
   async presignPut(key: string, contentType: string, sizeBytes: number, ttlSeconds = 900): Promise<PresignedPut> {
