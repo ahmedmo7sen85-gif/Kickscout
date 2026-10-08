@@ -468,6 +468,19 @@ export const AccountExport = z.object({
   likes: z.array(z.object({ videoId: Id, at: z.iso.datetime() })),
   saves: z.array(z.object({ videoId: Id, at: z.iso.datetime() })),
   notifications: z.array(z.object({ id: Id, kind: z.string(), payload: z.record(z.string(), z.unknown()), read: z.boolean(), createdAt: z.iso.datetime() })),
+  /** Plans in effect and subscription history. No provider ids, card or payment details. */
+  billing: z.object({
+    plans: z.array(z.string()),
+    subscriptions: z.array(z.object({
+      planKey: z.string(), planName: Bilingual, status: z.string(),
+      /** subscriber: yours and paid by you; beneficiary: paid by your guardian; payer: you pay for someone else. */
+      role: z.enum(['subscriber', 'beneficiary', 'payer']),
+      interval: z.string().nullable(), currency: z.string().nullable(), amountMinor: z.number().int().nullable(),
+      trialEnd: z.iso.datetime().nullable(), currentPeriodEnd: z.iso.datetime().nullable(), cancelAtPeriodEnd: z.boolean(),
+      canceledAt: z.iso.datetime().nullable(), createdAt: z.iso.datetime(),
+    })),
+    couponRedemptions: z.array(z.object({ code: z.string(), at: z.iso.datetime() })),
+  }),
   scout: z.object({
     shortlists: z.array(z.object({ id: Id, name: z.string(), playerIds: z.array(Id), createdAt: z.iso.datetime() })),
     notes: z.array(z.object({ id: Id, playerId: Id, body: z.string(), createdAt: z.iso.datetime() })),
@@ -622,3 +635,4 @@ export const CouponView = z.object({
   durationMonths: z.number().int().nullable(),
 });
 export const WebhookAck = z.object({ received: z.literal(true), duplicate: z.boolean() });
+export const BillingMaintenanceReport = z.object({ canceled: z.number().int(), failed: z.number().int(), pending: z.number().int() });

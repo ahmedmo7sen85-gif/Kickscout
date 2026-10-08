@@ -124,6 +124,16 @@ export class StripePaymentProvider implements PaymentProvider {
     return { url: s.url };
   }
 
+  async cancelSubscription(providerSubscriptionId: string) {
+    try {
+      await this.stripe.subscriptions.cancel(providerSubscriptionId);
+    } catch (err) {
+      // Already cancelled or deleted at Stripe: nothing left to stop.
+      if ((err as { code?: string }).code === 'resource_missing') return;
+      throw err;
+    }
+  }
+
   parseWebhook(rawBody: Buffer, signature: string | undefined): BillingEvent {
     return parseStripeWebhook(rawBody, signature, this.webhookSecret);
   }

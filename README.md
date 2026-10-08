@@ -192,6 +192,7 @@ offered once per plan audience.
 | `STRIPE_SECRET_KEY` | API | Stripe **test-mode** secret key (`sk_test_…` or restricted `rk_test_…`). Live keys are refused at startup. |
 | `STRIPE_WEBHOOK_SECRET` | API | Signing secret (`whsec_…`) of the webhook endpoint. Required together with the key. |
 | `WEB_APP_URL` | API | Public web URL; checkout returns to `/settings?checkout=success#billing` or `/pricing?checkout=cancelled`. |
+| `CRON_SECRET` | API | Bearer secret for `GET /v1/cron/billing` (daily on Vercel via `apps/api/vercel.json`; call it from any scheduler elsewhere). |
 | `NEXT_PUBLIC_SALES_EMAIL` | Web | Optional address for the Enterprise "Contact sales" button. |
 
 Without the two Stripe variables the API runs normally and `POST /v1/billing/checkout`,
@@ -205,6 +206,14 @@ then says "Payments are not enabled yet". To turn payments on in test mode:
 2. Configure the Customer Portal (Settings > Billing > Customer portal): allow cancellation and
    payment-method updates. That is the one-click "Manage or cancel" button in Settings.
 3. Set the variables above and redeploy the API. `GET /v1/plans` then reports `paymentsEnabled: true`.
+
+Deleting an account (by its owner or a guardian) ends every subscription it holds or pays for: the
+rows are closed in the deletion transaction and the provider is asked to cancel right away. If that
+call fails (or payments are switched off) the deletion still completes; the row keeps
+`cancel_requested_at`, the error and an attempt count, the failure is audited, and the daily
+`GET /v1/cron/billing` retries it (up to 10 attempts, after which it stays listed as pending for a
+person to check). Data exports (`GET /v1/me/export`) include plans, subscriptions with their dates
+and coupon redemptions, never provider ids or payment details.
 
 A paid plan is granted only when a signature-verified webhook writes the `subscriptions` row; the
 redirect back from Checkout grants nothing. Webhook events are recorded by id in `billing_events`

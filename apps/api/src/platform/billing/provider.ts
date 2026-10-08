@@ -81,6 +81,8 @@ export interface PaymentProvider {
   readonly signatureHeader: string;
   createCheckoutSession(input: CreateCheckoutInput): Promise<{ id: string; url: string }>;
   createPortalSession(input: { customerId: string; returnUrl: string }): Promise<{ url: string }>;
+  /** Ends a subscription immediately, without proration or refund. Succeeds if it is already gone. */
+  cancelSubscription(providerSubscriptionId: string): Promise<void>;
   /** Verifies the signature over the exact raw body and normalises the event; throws WebhookSignatureError. */
   parseWebhook(rawBody: Buffer, signature: string | undefined): BillingEvent;
 }

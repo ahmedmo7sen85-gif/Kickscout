@@ -38,6 +38,11 @@ const Env = z
     /** Optional: the worker endpoint to wake after an upload completes (serverless worker). */
     WORKER_TRIGGER_URL: z.url().optional(),
     WORKER_TRIGGER_SECRET: z.string().min(32).optional(),
+    /**
+     * Bearer secret for scheduled maintenance calls (GET /v1/cron/billing). Vercel Cron sends it
+     * automatically when CRON_SECRET is set on the project; other hosts call the URL with it.
+     */
+    CRON_SECRET: unsetIfEmpty(z.string().min(16).optional()),
     /** The web app's public URL; checkout and billing-portal pages send people back here. */
     WEB_APP_URL: z.url().default('http://localhost:3000'),
     /**

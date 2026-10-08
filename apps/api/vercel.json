@@ -24,6 +24,10 @@
     {
       "path": "/api/worker",
       "schedule": "0 4 * * *"
+    },
+    {
+      "path": "/v1/cron/billing",
+      "schedule": "30 4 * * *"
     }
   ]
 }

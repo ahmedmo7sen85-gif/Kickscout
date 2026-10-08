@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import type { Transaction } from 'kysely';
 import {
-  CheckoutRequest, CheckoutResponse, CouponValidateRequest, CouponView, EntitlementsView, PlanList, PlansQuery, PortalResponse, WebhookAck,
+  BillingMaintenanceReport, CheckoutRequest, CheckoutResponse, CouponValidateRequest, CouponView, EntitlementsView, PlanList, PlansQuery, PortalResponse, WebhookAck,
 } from '@fp/contracts';
 import { audienceAllowed, FEATURES, isFeature, isMinor, nextMonthStart, planLimits, subscriptionGrants } from '@fp/domain';
 import type { AgeBand, Role, SubscriptionStatus } from '@fp/domain';
@@ -14,6 +14,14 @@ import { audit, notify } from '../platform/events.js';
 import { configuredDefaults, entitlementsFor, planRows, scoutSearchesUsed, shortlistSlotsUsed, toPlanDefinition, uploadUsage } from '../platform/entitlements.js';
 import type { BillingEvent, PaymentProvider, ProviderSubscription } from '../platform/billing/provider.js';
 import { WebhookSignatureError } from '../platform/billing/provider.js';
+import { retryPendingCancellations } from '../platform/billing/cancellations.js';
+import { timingSafeEqual } from 'node:crypto';
+
+function bearerIs(header: string | undefined, secret: string): boolean {
+  const given = Buffer.from(header?.startsWith('Bearer ') ? header.slice(7) : '');
+  const want = Buffer.from(secret);
+  return given.length === want.length && timingSafeEqual(given, want);
+}
 
 type Bilingual = { en: string; ar: string };
 
@@ -80,6 +88,8 @@ async function applySubscription(tx: Transaction<DB>, deps: Deps, providerName: 
   const existing = await tx.selectFrom('subscriptions').selectAll().where('provider', '=', providerName)
     .where('provider_subscription_id', '=', s.id).forUpdate().executeTakeFirst();
   if (existing && existing.provider_event_at > ev.createdAt) return 'stale';
+  // A subscription we cancelled (account deleted) never grants again, even if the provider has not caught up yet.
+  if (existing?.cancel_requested_at && GRANTING.has(s.status)) return 'stale';
 
   const userId = existing?.user_id ?? s.metadata.userId;
   const planKey = existing?.plan_key ?? s.metadata.planKey;
@@ -331,6 +341,16 @@ export const billingRoutes = [
         .where('provider', '=', pay.name).executeTakeFirst();
       if (!customer) throw new ApiError(404, 'NO_BILLING_ACCOUNT', 'you have no paid plan to manage');
       return pay.createPortalSession({ customerId: customer.provider_customer_id, returnUrl: webUrl(ctx.deps, '/settings#billing') });
+    },
+  ),
+
+  route(
+    { method: 'get', path: '/v1/cron/billing', summary: 'Scheduled billing maintenance: retries provider cancellations that failed (Bearer CRON_SECRET)', tag: 'billing', auth: 'none', response: BillingMaintenanceReport },
+    async (ctx) => {
+      const secret = ctx.deps.config.CRON_SECRET;
+      if (!secret) throw new ApiError(503, 'CRON_NOT_CONFIGURED', 'set CRON_SECRET to enable scheduled maintenance');
+      if (!bearerIs(ctx.req.headers.authorization, secret)) throw new ApiError(401, 'UNAUTHENTICATED', 'cron secret required');
+      return retryPendingCancellations(ctx.deps, ctx.req.log);
     },
   ),
 

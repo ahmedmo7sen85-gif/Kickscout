@@ -52,7 +52,7 @@ let subSeq = 0;
 /** Gives a user a paid plan the way production does: through subscription webhooks. */
 async function subscribe(u: User, planKey: string, status = 'active') {
   const id = `sub_test_${++subSeq}`;
-  const r = await webhook('customer.subscription.created', stripeSubscription({ id, customer: `cus_${u.userId.slice(0, 8)}`, status, metadata: { userId: u.userId, payerUserId: u.userId, planKey } }));
+  const r = await webhook('customer.subscription.created', stripeSubscription({ id, customer: `cus_${u.userId}`, status, metadata: { userId: u.userId, payerUserId: u.userId, planKey } }));
   expect(r.status).toBe(200);
   return id;
 }
@@ -465,3 +465,117 @@ describe('Stripe event normalisation and configuration', () => {
     expect(() => loadConfig({ ...base, STRIPE_SECRET_KEY: 'sk_test_abc' })).toThrow(/together/);
   });
 });
+
+// -------------------------------------------------------------------------------------------- deletion and export
+describe('account deletion ends paid plans', () => {
+  const del = (u: User) => call('DELETE', '/v1/me', { token: u.token, body: { confirm: 'DELETE' } });
+  const row = (providerId: string) => env.db.selectFrom('subscriptions').selectAll().where('provider_subscription_id', '=', providerId).executeTakeFirstOrThrow();
+  const actions = async (userId: string) => (await env.db.selectFrom('audit_logs').select('action').where('target_id', '=', userId).where('action', 'like', 'billing.%').execute()).map((a) => a.action);
+  const cron = (auth?: string) => call('GET', '/v1/cron/billing', auth ? { headers: { authorization: auth } } : {});
+
+  it('cancels the subscription at the provider and closes it locally', async () => {
+    const p = await user();
+    const subId = await subscribe(p, 'player_pro');
+    expect((await del(p)).body).toEqual({ status: 'deleted' });
+    expect(fake.cancels).toContain(subId);
+    const r = await row(subId);
+    expect(r).toMatchObject({ status: 'canceled', cancel_reason: 'account_deleted', provider_cancel_error: null, provider_cancel_attempts: 1 });
+    expect(r.provider_canceled_at).not.toBeNull();
+    expect(await actions(p.userId)).toEqual(expect.arrayContaining(['billing.subscription_canceled', 'billing.provider_canceled']));
+    // A later provider event cannot bring the plan back.
+    await webhook('customer.subscription.updated', stripeSubscription({ id: subId, customer: 'cus_x', status: 'active', metadata: { userId: p.userId, payerUserId: p.userId, planKey: 'player_pro' } }), { created: Math.floor(Date.now() / 1000) + 60 });
+    expect((await row(subId)).status).toBe('canceled');
+  });
+
+  it('still deletes when the provider call fails, records the failure, and the billing cron retries it', async () => {
+    const p = await user();
+    const subId = await subscribe(p, 'player_pro', 'trialing');
+    fake.failCancels = true;
+    try {
+      expect((await del(p)).body).toEqual({ status: 'deleted' });
+    } finally {
+      fake.failCancels = false;
+    }
+    expect((await env.db.selectFrom('users').select('status').where('id', '=', p.userId).executeTakeFirstOrThrow()).status).toBe('deleted');
+    let r = await row(subId);
+    expect(r).toMatchObject({ status: 'canceled', provider_canceled_at: null, provider_cancel_attempts: 1, provider_cancel_error: 'provider unreachable (fake)' });
+    expect(r.cancel_requested_at).not.toBeNull();
+    expect(fake.cancels).not.toContain(subId);
+    expect(await actions(p.userId)).toContain('billing.provider_cancel_failed');
+    // The plan grants nothing meanwhile.
+    expect(subscriptionGrantsRow(r)).toBe(false);
+
+    expect((await cron()).status).toBe(401);
+    expect((await cron('Bearer wrong-secret-0123456789xx')).status).toBe(401);
+    const ok = await cron(`Bearer ${env.deps.config.CRON_SECRET}`);
+    expect(ok.status).toBe(200);
+    expect(ok.body.pending).toBe(0);
+    expect(fake.cancels).toContain(subId);
+    r = await row(subId);
+    expect(r.provider_canceled_at).not.toBeNull();
+    expect(r.provider_cancel_attempts).toBe(2);
+  });
+
+  it('closes local rows when billing is not configured, and cancels at the provider once it is', async () => {
+    const p = await user();
+    const subId = await subscribe(p, 'player_pro');
+    env.deps.billing = null;
+    try {
+      expect((await del(p)).body).toEqual({ status: 'deleted' });
+      expect((await cron(`Bearer ${env.deps.config.CRON_SECRET}`)).body).toMatchObject({ canceled: 0, failed: 0 });
+    } finally {
+      env.deps.billing = fake;
+    }
+    const r = await row(subId);
+    expect(r).toMatchObject({ status: 'canceled', provider_canceled_at: null, provider_cancel_error: 'billing not configured' });
+    expect(fake.cancels).not.toContain(subId);
+    await cron(`Bearer ${env.deps.config.CRON_SECRET}`);
+    expect(fake.cancels).toContain(subId);
+  });
+
+  it('cancels what a guardian pays for when the guardian deletes their account, and the ward’s plan when the guardian deletes the ward', async () => {
+    const guardian = await user(['fan']);
+    const kids = [await user(['player'], '2011-03-15'), await user(['player'], '2012-05-01')];
+    const subs: string[] = [];
+    for (const kid of kids) {
+      await env.db.insertInto('guardian_relationships').values({ guardian_user_id: guardian.userId, minor_user_id: kid.userId }).execute();
+      await env.db.updateTable('users').set({ status: 'active' }).where('id', '=', kid.userId).execute();
+      const id = `sub_ward_${kid.userId}`;
+      await webhook('customer.subscription.created', stripeSubscription({ id, customer: 'cus_guardian_pays', status: 'active', metadata: { userId: kid.userId, payerUserId: guardian.userId, planKey: 'player_pro' } }));
+      subs.push(id);
+    }
+    const byGuardian = await call('DELETE', `/v1/users/${kids[0]!.userId}/account`, { token: guardian.token, body: { confirm: 'DELETE' } });
+    expect(byGuardian.body).toEqual({ status: 'deleted' });
+    expect(fake.cancels).toContain(subs[0]);
+    expect((await row(subs[1]!)).status).toBe('active');
+
+    expect((await del(guardian)).body).toEqual({ status: 'deleted' });
+    expect(fake.cancels).toContain(subs[1]);
+    expect((await row(subs[1]!)).status).toBe('canceled');
+  });
+});
+
+describe('data export includes billing', () => {
+  it('lists plans, subscriptions with dates and coupon redemptions, without provider ids', async () => {
+    const p = await user();
+    const trialEnd = new Date(Date.now() + 7 * 86_400_000);
+    await webhook('customer.subscription.created', stripeSubscription({ id: 'sub_export_secretish', customer: 'cus_export_secretish', status: 'trialing', trialEnd, periodEnd: trialEnd, metadata: { userId: p.userId, payerUserId: p.userId, planKey: 'player_pro' } }));
+    await env.db.insertInto('coupons').values({ code: 'EXPORTME', percent_off: 5, provider_promotion_code_id: 'promo_export' }).execute();
+    await env.db.insertInto('coupon_redemptions').values({ code: 'EXPORTME', user_id: p.userId, provider_session_id: 'cs_export' }).execute();
+
+    const r = await call('GET', '/v1/me/export', { token: p.token });
+    expect(r.status).toBe(200);
+    expect(r.body.billing.plans).toEqual(['player_free', 'player_pro']);
+    expect(r.body.billing.subscriptions).toEqual([expect.objectContaining({
+      planKey: 'player_pro', planName: { en: 'Player Pro', ar: 'اللاعب برو' }, status: 'trialing', role: 'subscriber', interval: 'month', currency: 'USD',
+      amountMinor: 499, trialEnd: new Date(Math.floor(trialEnd.getTime() / 1000) * 1000).toISOString(), cancelAtPeriodEnd: false, canceledAt: null,
+    })]);
+    expect(r.body.billing.couponRedemptions).toEqual([{ code: 'EXPORTME', at: expect.any(String) }]);
+    const raw = JSON.stringify(r.body);
+    for (const secretish of ['sub_export_secretish', 'cus_export_secretish', 'cs_export', 'promo_export']) expect(raw).not.toContain(secretish);
+  });
+});
+
+function subscriptionGrantsRow(r: { status: string; current_period_end: Date | null }) {
+  return ['trialing', 'active', 'past_due'].includes(r.status) && (!r.current_period_end || r.current_period_end > new Date());
+}

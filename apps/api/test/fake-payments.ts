@@ -15,6 +15,9 @@ export class FakePaymentProvider implements PaymentProvider {
   readonly signatureHeader = 'stripe-signature';
   readonly checkouts: (CreateCheckoutInput & { id: string })[] = [];
   readonly portals: { customerId: string; returnUrl: string }[] = [];
+  readonly cancels: string[] = [];
+  /** Set to make cancelSubscription fail, as an unreachable provider would. */
+  failCancels = false;
   private n = 0;
 
   async createCheckoutSession(input: CreateCheckoutInput) {
@@ -26,6 +29,11 @@ export class FakePaymentProvider implements PaymentProvider {
   async createPortalSession(input: { customerId: string; returnUrl: string }) {
     this.portals.push(input);
     return { url: `https://billing.fake.test/p/session/${input.customerId}` };
+  }
+
+  async cancelSubscription(id: string) {
+    if (this.failCancels) throw new Error('provider unreachable (fake)');
+    this.cancels.push(id);
   }
 
   parseWebhook(rawBody: Buffer, signature: string | undefined): BillingEvent {

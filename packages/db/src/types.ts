@@ -421,6 +421,8 @@ export interface Subscriptions {
   amount_minor: number | null;
   billing_interval: string | null;
   cancel_at_period_end: Generated<boolean>;
+  cancel_reason: string | null;
+  cancel_requested_at: Timestamp | null;
   canceled_at: Timestamp | null;
   created_at: Generated<Timestamp>;
   currency: string | null;
@@ -429,6 +431,9 @@ export interface Subscriptions {
   payer_user_id: string | null;
   plan_key: string;
   provider: string;
+  provider_cancel_attempts: Generated<number>;
+  provider_cancel_error: string | null;
+  provider_canceled_at: Timestamp | null;
   provider_customer_id: string | null;
   provider_event_at: Timestamp;
   provider_subscription_id: string;

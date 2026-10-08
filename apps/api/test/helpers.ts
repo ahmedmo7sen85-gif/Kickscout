@@ -66,7 +66,7 @@ export async function createTestEnv(overrides: Partial<Config> = {}, opts: { bil
     NODE_ENV: 'test', PORT: 0, DATABASE_URL: url.toString(), AUTH_JWKS_URL: 'https://idp.test/jwks', AUTH_ISSUER: ISSUER,
     AUTH_AUDIENCE: AUDIENCE, S3_REGION: 'eu-central-1', S3_BUCKET_ORIGINALS: 'test', S3_FORCE_PATH_STYLE: true, CDN_BASE_URL: 'https://cdn.test',
     DOB_ENCRYPTION_KEY: randomBytes(32).toString('base64'), VIEWER_HASH_SECRET: randomBytes(32).toString('hex'), MAILER: 'log', ALLOW_LOG_MAILER: 'no', RATE_LIMIT_STORE: 'memory', MAX_VIDEO_SECONDS: 60, MAX_ACTIVE_VIDEOS: 20, MAX_UPLOADS_PER_DAY: 10, POLICY_VERSION: 'test-1',
-    CORS_ORIGINS: 'https://web.test', WEB_APP_URL: 'https://web.test',
+    CORS_ORIGINS: 'https://web.test', WEB_APP_URL: 'https://web.test', CRON_SECRET: 'cron-secret-for-tests-0123456789',
   } satisfies Config;
   Object.assign(config, overrides);
   const deps: Deps = { config, db, verifier, storage, mailer, billing: opts.billing ?? null, dobKey: Buffer.from(config.DOB_ENCRYPTION_KEY, 'base64'), now: () => new Date() };

@@ -135,11 +135,21 @@ CREATE TABLE subscriptions (
   canceled_at               timestamptz,
   -- Time of the provider event this row reflects; older events arriving late are ignored.
   provider_event_at         timestamptz NOT NULL,
+  -- Cancellations we start ourselves (account deletion). The row is closed locally at once;
+  -- provider_canceled_at is set once the provider confirms, otherwise the error is kept for a retry.
+  cancel_requested_at       timestamptz,
+  cancel_reason             text,
+  provider_canceled_at      timestamptz,
+  provider_cancel_attempts  integer NOT NULL DEFAULT 0,
+  provider_cancel_error     text,
   created_at                timestamptz NOT NULL DEFAULT now(),
   updated_at                timestamptz NOT NULL DEFAULT now(),
   UNIQUE (provider, provider_subscription_id)
 );
 CREATE INDEX subscriptions_user_idx ON subscriptions (user_id, status);
+CREATE INDEX subscriptions_payer_idx ON subscriptions (payer_user_id);
+CREATE INDEX subscriptions_cancel_pending_idx ON subscriptions (cancel_requested_at)
+  WHERE cancel_requested_at IS NOT NULL AND provider_canceled_at IS NULL;
 
 -- Webhook idempotency: one row per provider event id, written in the same transaction as the
 -- event's effects, so a replayed or retried event is applied once.
