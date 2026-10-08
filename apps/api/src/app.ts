@@ -43,6 +43,12 @@ export async function buildApp(deps: Deps, opts: { logger?: boolean } = {}) {
 
   app.get('/healthz', async () => ({ ok: true }));
   app.get('/v1/openapi.json', async () => openApiDocument());
-  register(app, deps, routes);
+  register(app, deps, routes.filter((r) => !r.rawBody));
+  // Routes that verify a signature over the exact bytes get them unparsed, in their own scope.
+  await app.register(async (scope) => {
+    scope.removeAllContentTypeParsers();
+    scope.addContentTypeParser('*', { parseAs: 'buffer' }, (_req, body, done) => done(null, body));
+    register(scope, deps, routes.filter((r) => r.rawBody));
+  });
   return app;
 }

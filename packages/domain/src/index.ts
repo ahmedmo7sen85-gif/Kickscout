@@ -6,3 +6,4 @@ export * from './policy.js';
 export * from './radar.js';
 export * from './notifications.js';
 export * from './orgs.js';
+export * from './entitlements.js';

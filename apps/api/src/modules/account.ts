@@ -15,6 +15,9 @@ import { audit, emit, notify } from '../platform/events.js';
 import { ageBandOf, currentConsents } from '../platform/actor.js';
 import { decrypt } from '../platform/crypto.js';
 import { removeFromOrganizations } from './orgs.js';
+import { cancelAtProvider, closeSubscriptionsForDeletion } from '../platform/billing/cancellations.js';
+import { entitlementsFor } from '../platform/entitlements.js';
+import type { FastifyBaseLogger } from 'fastify';
 
 const Uuid = z.uuid();
 
@@ -108,7 +111,7 @@ async function requestGuardianDeletion(tx: Transaction<DB>, subjectId: string, n
   await audit(tx, { actorId: subjectId, action: 'account.deletion_requested', targetKind: 'user', targetId: subjectId });
 }
 
-async function deleteRoute(deps: Deps, me: Actor, subjectId: string): Promise<z.input<typeof DeleteAccountResponse>> {
+async function deleteRoute(deps: Deps, me: Actor, subjectId: string, log: FastifyBaseLogger): Promise<z.input<typeof DeleteAccountResponse>> {
   const subject = await deps.db.selectFrom('users').innerJoin('age_records', 'age_records.user_id', 'users.id')
     .select(['users.id', 'age_records.age_band']).where('users.id', '=', subjectId).where('users.status', '!=', 'deleted').executeTakeFirst();
   if (!subject) throw notFound('user');
@@ -123,7 +126,13 @@ async function deleteRoute(deps: Deps, me: Actor, subjectId: string): Promise<z.
     }
     throw forbidden(decision.code, decision.reason);
   }
-  await deps.db.transaction().execute((tx) => deleteAccount(tx, subjectId, me.userId, now));
+  // Paid plans end with the account: closed here in the same transaction, then stopped at the provider.
+  // A provider failure never blocks the deletion; the row keeps the error and the billing cron retries it.
+  const closed = await deps.db.transaction().execute(async (tx) => {
+    await deleteAccount(tx, subjectId, me.userId, now);
+    return closeSubscriptionsForDeletion(tx, subjectId, me.userId, now);
+  });
+  await cancelAtProvider(deps, log, closed);
   return { status: 'deleted' };
 }
 
@@ -209,6 +218,17 @@ export const accountRoutes = [
         db.selectFrom('saves').select(['video_id', 'created_at']).where('user_id', '=', uid).execute(),
         db.selectFrom('notifications').selectAll().where('user_id', '=', uid).orderBy('created_at').execute(),
       ]);
+      // Billing: what you hold or pay for, with dates. Provider ids and payment details stay out.
+      const [entitlements, subscriptions, redemptions] = await Promise.all([
+        entitlementsFor(ctx.deps, uid, me.roles),
+        db.selectFrom('subscriptions').innerJoin('plans', 'plans.key', 'subscriptions.plan_key')
+          .select(['subscriptions.plan_key', 'plans.names', 'subscriptions.user_id', 'subscriptions.payer_user_id', 'subscriptions.status',
+            'subscriptions.billing_interval', 'subscriptions.currency', 'subscriptions.amount_minor', 'subscriptions.trial_end',
+            'subscriptions.current_period_end', 'subscriptions.cancel_at_period_end', 'subscriptions.canceled_at', 'subscriptions.created_at'])
+          .where((eb) => eb.or([eb('subscriptions.user_id', '=', uid), eb('subscriptions.payer_user_id', '=', uid)]))
+          .orderBy('subscriptions.created_at').execute(),
+        db.selectFrom('coupon_redemptions').select(['code', 'created_at']).where('user_id', '=', uid).orderBy('created_at').execute(),
+      ]);
       const isScout = me.roles.includes('scout');
       const [shortlists, members, notes] = isScout
         ? await Promise.all([
@@ -247,6 +267,16 @@ export const accountRoutes = [
         likes: likes.map((l) => ({ videoId: l.video_id, at: l.created_at.toISOString() })),
         saves: saves.map((s) => ({ videoId: s.video_id, at: s.created_at.toISOString() })),
         notifications: notifications.map((n) => ({ id: n.id, kind: n.kind, payload: n.payload as Record<string, unknown>, read: n.read_at !== null, createdAt: n.created_at.toISOString() })),
+        billing: {
+          plans: entitlements.plans,
+          subscriptions: subscriptions.map((s) => ({
+            planKey: s.plan_key, planName: s.names as { en: string; ar: string }, status: s.status,
+            role: s.user_id === uid ? (s.payer_user_id && s.payer_user_id !== uid ? 'beneficiary' as const : 'subscriber' as const) : 'payer' as const,
+            interval: s.billing_interval, currency: s.currency, amountMinor: s.amount_minor, trialEnd: iso(s.trial_end),
+            currentPeriodEnd: iso(s.current_period_end), cancelAtPeriodEnd: s.cancel_at_period_end, canceledAt: iso(s.canceled_at), createdAt: s.created_at.toISOString(),
+          })),
+          couponRedemptions: redemptions.map((r) => ({ code: r.code, at: r.created_at.toISOString() })),
+        },
         scout: isScout ? {
           shortlists: shortlists.map((s) => ({ id: s.id, name: s.name, playerIds: members.filter((m) => m.shortlist_id === s.id).map((m) => m.player_id), createdAt: s.created_at.toISOString() })),
           notes: notes.map((n) => ({ id: n.id, playerId: n.player_id, body: n.body, createdAt: n.created_at.toISOString() })),
@@ -257,14 +287,14 @@ export const accountRoutes = [
 
   route(
     { method: 'delete', path: '/v1/me', summary: 'Delete my account (a minor’s request waits for their guardian)', tag: 'account', auth: 'user', body: DeleteAccountRequest, response: DeleteAccountResponse, rateLimit: { max: 5, timeWindow: '1 hour' } },
-    async (ctx) => deleteRoute(ctx.deps, ctx.me(), ctx.me().userId),
+    async (ctx) => deleteRoute(ctx.deps, ctx.me(), ctx.me().userId, ctx.req.log),
   ),
   route(
     { method: 'delete', path: '/v1/users/:userId/account', summary: 'A guardian deletes their ward’s account', tag: 'account', auth: 'user', body: DeleteAccountRequest, response: DeleteAccountResponse, rateLimit: { max: 5, timeWindow: '1 hour' } },
     async (ctx) => {
       const parsed = Uuid.safeParse(ctx.params.userId);
       if (!parsed.success) throw notFound('user');
-      return deleteRoute(ctx.deps, ctx.me(), parsed.data);
+      return deleteRoute(ctx.deps, ctx.me(), parsed.data, ctx.req.log);
     },
   ),
 ];

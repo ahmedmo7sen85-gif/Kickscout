@@ -2,13 +2,14 @@
 
 import { useEffect, useState, type FormEvent } from 'react';
 import { AuthGate } from '@/components/AuthGate';
+import { BillingSummary } from '@/components/billing/BillingSummary';
 import { LocaleSwitch } from '@/components/nav/LocaleSwitch';
 import { PageHead } from '@/components/PageHead';
 import { Button } from '@/components/ui/Button';
 import { SkeletonList } from '@/components/ui/Skeleton';
 import { ErrorState } from '@/components/ui/States';
 import { useToast } from '@/components/ui/Toast';
-import { api } from '@/lib/api';
+import { api, isApiError } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { CONSENT_PURPOSES, FEET, NOTIFICATION_PREFERENCE_KEYS, POSITIONS, PRIVACY_TOGGLES, PROFILE_VISIBILITIES } from '@/lib/constants';
 import { publicEnv } from '@/lib/env';
@@ -43,6 +44,7 @@ function Sections() {
       <Verification me={me} onSent={refreshMe} />
       <ContactRequests />
       <NotificationPrefs />
+      <Billing roles={me.roles} />
       <section className="card" aria-labelledby="s-lang">
         <h2 className="section-title" id="s-lang">{t.settings.languageSection}</h2>
         <div><LocaleSwitch /></div>
@@ -383,6 +385,39 @@ function NotificationPrefs() {
             </button>
           </li>
         </ul>
+      ) : null}
+    </section>
+  );
+}
+
+function Billing({ roles }: { roles: readonly string[] }) {
+  const { t } = useI18n();
+  const toast = useToast();
+  const e = useApi((s) => api.entitlements(s), []);
+  const [busy, setBusy] = useState(false);
+  const [off, setOff] = useState(false);
+  const [confirming, setConfirming] = useState(false);
+  useEffect(() => {
+    if (typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('checkout') === 'success') setConfirming(true);
+  }, []);
+  const manage = async () => {
+    setBusy(true);
+    try {
+      const r = await api.billingPortal();
+      window.location.assign(r.url);
+    } catch (err) {
+      if (isApiError(err) && err.isBillingOff) setOff(true);
+      else toast.show(errorMessage(err, t), { tone: 'error' });
+      setBusy(false);
+    }
+  };
+  return (
+    <section className="card" aria-labelledby="s-billing" id="billing">
+      <h2 className="section-title" id="s-billing">{t.billing.sectionTitle}</h2>
+      {e.status === 'loading' ? <SkeletonList rows={2} label={t.common.loading} /> : null}
+      {e.status === 'error' ? <ErrorState error={e.error} onRetry={e.retry} /> : null}
+      {e.status === 'success' ? (
+        <BillingSummary data={e.data} roles={roles} paymentsOff={off} busy={busy} confirming={confirming} onManage={manage} onRefresh={e.retry} />
       ) : null}
     </section>
   );

@@ -28,7 +28,7 @@ function describe(n: NotificationView, generic: string, savedSearchMatch: string
   const videoId = str(p.videoId);
   const handle = str(p.handle) ?? str(p.actorHandle);
   const slug = str(p.challengeSlug);
-  const href = videoId ? `/v/${videoId}` : slug ? `/challenges/${slug}` : handle ? `/u/${handle}` : n.kind.startsWith('contact') ? '/settings#contact' : null;
+  const href = videoId ? `/v/${videoId}` : slug ? `/challenges/${slug}` : handle ? `/u/${handle}` : n.kind.startsWith('contact') ? '/settings#contact' : n.kind.startsWith('billing.') ? '/settings#billing' : null;
   return { text, href };
 }
 

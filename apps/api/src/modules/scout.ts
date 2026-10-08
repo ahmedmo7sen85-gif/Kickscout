@@ -16,6 +16,7 @@ import { discoverablePlayers, filterPlayers } from './catalog.js';
 import { playerCards } from './views.js';
 import { sendContactRequest } from './contact-flow.js';
 import { organizationVerificationTarget } from './orgs.js';
+import { consumeScoutSearch, entitlementsFor, shortlistSlotsUsed } from '../platform/entitlements.js';
 
 const Uuid = z.uuid();
 
@@ -50,6 +51,12 @@ export const scoutRoutes = [
     async (ctx) => {
       ctx.authorize({ kind: 'scout.use' });
       const f = ctx.query;
+      // A search counts once against the plan's monthly quota; loading more pages of it does not.
+      if (!f.cursor) {
+        const me = ctx.me();
+        const { limits } = await entitlementsFor(ctx.deps, me.userId, me.roles);
+        await consumeScoutSearch(ctx.deps, me.userId, limits);
+      }
       let q = filterPlayers(discoverablePlayers(ctx.deps, ctx.actor), f)
         .innerJoin('age_records', 'age_records.user_id', 'users.id')
         .select(['users.id', 'profiles.handle']);
@@ -123,10 +130,21 @@ export const scoutRoutes = [
     { method: 'put', path: '/v1/scout/shortlists/:shortlistId/players/:playerId', summary: 'Add a player to a shortlist', tag: 'scout', auth: 'user', status: 204 },
     async (ctx) => {
       ctx.authorize({ kind: 'scout.use' });
-      const s = await ownShortlist(ctx.deps, ctx.me().userId, ctx.params.shortlistId);
+      const me = ctx.me();
+      const s = await ownShortlist(ctx.deps, me.userId, ctx.params.shortlistId);
       const playerId = await discoverablePlayer(ctx.deps, ctx, ctx.params.playerId);
-      await ctx.deps.db.insertInto('shortlist_players').values({ shortlist_id: s.id, player_id: playerId })
-        .onConflict((oc) => oc.columns(['shortlist_id', 'player_id']).doNothing()).execute();
+      const { limits } = await entitlementsFor(ctx.deps, me.userId, me.roles);
+      await ctx.deps.db.transaction().execute(async (tx) => {
+        // Locking the scout's shortlists serialises concurrent adds, so the slot limit cannot be overshot.
+        await tx.selectFrom('shortlists').select('id').where('owner_id', '=', me.userId).forUpdate().execute();
+        const slots = await shortlistSlotsUsed(tx, me.userId, playerId);
+        // A player already on one of the scout's lists does not take another slot.
+        if (limits.shortlistSlots !== null && !slots.alreadyListed && slots.used >= limits.shortlistSlots) {
+          throw new ApiError(403, 'QUOTA_SHORTLIST_SLOTS', `your plan includes ${limits.shortlistSlots} shortlist slots; remove a player or upgrade for unlimited shortlists`);
+        }
+        await tx.insertInto('shortlist_players').values({ shortlist_id: s.id, player_id: playerId })
+          .onConflict((oc) => oc.columns(['shortlist_id', 'player_id']).doNothing()).execute();
+      });
     },
   ),
   route(

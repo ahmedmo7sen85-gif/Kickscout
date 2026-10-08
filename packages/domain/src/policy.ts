@@ -35,6 +35,8 @@ export type Action =
   | { kind: 'account.delete'; subjectId: string; subjectMinor: boolean; subjectHasGuardian: boolean }
   | { kind: 'copyright.counter_notice'; ownerId: string; ownerMinor: boolean }
   | { kind: 'comment.create'; videoOwnerId: string; commentsSetting: 'everyone' | 'followers' | 'off'; isFollower: boolean; blocked: boolean }
+  /** Buying a paid plan for `subjectId` (yourself, or a ward as their guardian). */
+  | { kind: 'billing.purchase'; subjectId: string; subjectMinor: boolean }
   | { kind: 'social.engage' }
   | { kind: 'report.create' }
   | { kind: 'consent.grant'; subjectId: string; purpose: ConsentPurpose }
@@ -114,6 +116,13 @@ export function can(actor: Actor, action: Action): Decision {
       if (actor.userId !== action.ownerId) return deny('FORBIDDEN', 'not your video');
       // A counter-notice is a legal statement; for a minor the guardian makes it.
       return action.ownerMinor ? deny('GUARDIAN_REQUIRED', 'a guardian must file this for a minor') : allow;
+
+    case 'billing.purchase':
+      // Minors never pay: a guardian buys for them, from the guardian's own account.
+      if (isMinor(actor.ageBand)) return deny('GUARDIAN_REQUIRED', 'a guardian must make purchases for you');
+      if (actor.guardianOf.includes(action.subjectId)) return allow;
+      if (actor.userId !== action.subjectId) return deny('FORBIDDEN', 'cannot buy a plan for another user');
+      return action.subjectMinor ? deny('GUARDIAN_REQUIRED', 'a guardian must make purchases for you') : allow;
 
     case 'comment.create':
       if (action.blocked) return deny('BLOCKED', 'you cannot comment here');
