@@ -75,6 +75,15 @@ export function AuthForm({ mode }: { mode: 'login' | 'signup' }) {
           {mode === 'signup' ? <span className="field__hint">{t.auth.passwordHint}</span> : null}</label>
         {error ? <p className="field__error" role="alert">{error}</p> : null}
         {info ? <p className="notice notice--accent" role="status">{info}</p> : null}
+        {mode === 'signup' ? (
+          <p className="small muted" data-testid="signup-legal">
+            {t.legal.signupAgree}{' '}
+            <Link className="link" href="/legal/terms">{t.legal.terms}</Link>{' · '}
+            <Link className="link" href="/legal/privacy">{t.legal.privacy}</Link>{' · '}
+            <Link className="link" href="/legal/community-guidelines">{t.legal.community}</Link>{' · '}
+            <Link className="link" href="/legal/scout-terms">{t.legal.scouts}</Link>
+          </p>
+        ) : null}
         <Button type="submit" variant="primary" block loading={busy === 'email'}>{mode === 'login' ? t.auth.loginCta : t.auth.signupCta}</Button>
       </form>
       <p className="small muted">

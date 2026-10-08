@@ -10,12 +10,14 @@ import { ErrorState } from '@/components/ui/States';
 import { useToast } from '@/components/ui/Toast';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
-import { CONSENT_PURPOSES, FEET, POSITIONS } from '@/lib/constants';
+import { CONSENT_PURPOSES, FEET, NOTIFICATION_PREFERENCE_KEYS, POSITIONS, PRIVACY_TOGGLES, PROFILE_VISIBILITIES } from '@/lib/constants';
 import { publicEnv } from '@/lib/env';
 import { errorMessage } from '@/lib/errors';
 import { useI18n } from '@/lib/i18n/provider';
 import { useApi } from '@/lib/useApi';
-import type { ConsentPurpose, ConsentState, Foot, MeView, Position } from '@/lib/types';
+import type {
+  ConsentPurpose, ConsentState, Foot, MeView, NotificationPreferenceKey, Position, PrivacySettingsView, UpdatePrivacyRequest,
+} from '@/lib/types';
 
 export function SettingsView() {
   const { t } = useI18n();
@@ -35,10 +37,12 @@ function Sections() {
   return (
     <div className="stack stack--loose">
       <ProfileForm me={me} onSaved={refreshMe} />
+      <Visibility me={me} minor={minor} />
       <Consents me={me} minor={minor} />
       {minor || me.guardianRequired ? <GuardianInvite /> : null}
       <Verification me={me} onSent={refreshMe} />
       <ContactRequests />
+      <NotificationPrefs />
       <section className="card" aria-labelledby="s-lang">
         <h2 className="section-title" id="s-lang">{t.settings.languageSection}</h2>
         <div><LocaleSwitch /></div>
@@ -48,6 +52,8 @@ function Sections() {
         <p className="muted">{fmt(t.settings.signedInAs, { handle: me.profile.handle })}</p>
         <div><Button onClick={() => void signOut()}>{t.common.logOut}</Button></div>
       </section>
+      <YourData />
+      <DeleteAccount minor={minor} onDeleted={signOut} />
     </div>
   );
 }
@@ -276,5 +282,174 @@ function ContactRequests() {
         </ul>
       ) : null}
     </section>
+  );
+}
+
+function Visibility({ me, minor }: { me: MeView; minor: boolean }) {
+  const { t } = useI18n();
+  const toast = useToast();
+  const p = useApi((s) => api.privacy(me.userId, s), [me.userId]);
+  const [busy, setBusy] = useState(false);
+  // The server decides what a minor may change; a refused change leaves the settings as they were.
+  const save = async (patch: UpdatePrivacyRequest) => {
+    setBusy(true);
+    try {
+      const next = await api.updatePrivacy(me.userId, patch);
+      p.setData(() => next);
+      toast.show(t.settings.privacySaved, { tone: 'success' });
+    } catch (e) { toast.show(errorMessage(e, t), { tone: 'error' }); } finally { setBusy(false); }
+  };
+  return (
+    <section className="card" aria-labelledby="s-vis" id="visibility">
+      <h2 className="section-title" id="s-vis">{t.settings.visibilitySection}</h2>
+      <p className="muted small">{t.settings.visibilityIntro}</p>
+      {minor ? <p className="notice notice--warn small">{t.settings.minorPrivacyNote}</p> : null}
+      {p.status === 'loading' ? <SkeletonList rows={3} label={t.common.loading} /> : null}
+      {p.status === 'error' ? <ErrorState error={p.error} onRetry={p.retry} /> : null}
+      {p.status === 'success' ? <VisibilityForm data={p.data} busy={busy} onChange={save} /> : null}
+    </section>
+  );
+}
+
+function VisibilityForm({ data, busy, onChange }: { data: PrivacySettingsView; busy: boolean; onChange: (patch: UpdatePrivacyRequest) => void }) {
+  const { t } = useI18n();
+  return (
+    <>
+      <fieldset className="radio-list" data-testid="visibility">
+        <legend className="sr-only">{t.settings.visibilitySection}</legend>
+        {PROFILE_VISIBILITIES.map((v) => (
+          <label key={v} className={`radio-row${data.profileVisibility === v ? ' is-checked' : ''}`}>
+            <input type="radio" name="visibility" checked={data.profileVisibility === v} disabled={busy}
+              onChange={() => onChange({ profileVisibility: v })} />
+            <span><strong>{t.settings[`vis_${v}`]}</strong><br /><span className="muted small">{t.settings[`vis_${v}Text`]}</span></span>
+          </label>
+        ))}
+      </fieldset>
+      <ul className="list">
+        {PRIVACY_TOGGLES.map((key) => (
+          <li key={key} className="list__row">
+            <span>
+              <strong id={`pt-${key}`}>{t.settings[`toggle_${key}`]}</strong><br />
+              <span className="muted small">{t.settings[`toggle_${key}Text`]}</span>
+            </span>
+            <button type="button" role="switch" className="toggle" aria-checked={data[key]} aria-labelledby={`pt-${key}`}
+              disabled={busy} onClick={() => onChange({ [key]: !data[key] })}>
+              <span className="sr-only">{data[key] ? t.settings.granted : t.settings.notGranted}</span>
+            </button>
+          </li>
+        ))}
+      </ul>
+    </>
+  );
+}
+
+function NotificationPrefs() {
+  const { t } = useI18n();
+  const toast = useToast();
+  const n = useApi((s) => api.notificationPreferences(s), []);
+  const [busy, setBusy] = useState<NotificationPreferenceKey | null>(null);
+  const toggle = async (key: NotificationPreferenceKey, on: boolean) => {
+    setBusy(key);
+    try {
+      const next = await api.updateNotificationPreferences({ [key]: on });
+      n.setData(() => next);
+      toast.show(t.settings.notificationsSaved, { tone: 'success' });
+    } catch (e) { toast.show(errorMessage(e, t), { tone: 'error' }); } finally { setBusy(null); }
+  };
+  return (
+    <section className="card" aria-labelledby="s-notif" id="notifications">
+      <h2 className="section-title" id="s-notif">{t.settings.notificationsSection}</h2>
+      <p className="muted small">{t.settings.notificationsIntro}</p>
+      {n.status === 'loading' ? <SkeletonList rows={3} label={t.common.loading} /> : null}
+      {n.status === 'error' ? <ErrorState error={n.error} onRetry={n.retry} /> : null}
+      {n.status === 'success' ? (
+        <ul className="list">
+          {NOTIFICATION_PREFERENCE_KEYS.map((key) => (
+            <li key={key} className="list__row">
+              <strong id={`np-${key}`}>{t.settings[`notif_${key}`]}</strong>
+              <button type="button" role="switch" className="toggle" aria-checked={n.data[key]} aria-labelledby={`np-${key}`}
+                disabled={busy === key} onClick={() => toggle(key, !n.data[key])}>
+                <span className="sr-only">{n.data[key] ? t.settings.granted : t.settings.notGranted}</span>
+              </button>
+            </li>
+          ))}
+          <li className="list__row">
+            <span>
+              <strong id="np-security">{t.settings.notif_security}</strong><br />
+              <span className="muted small">{t.settings.notif_securityText}</span>
+            </span>
+            <button type="button" role="switch" className="toggle" aria-checked aria-labelledby="np-security" disabled>
+              <span className="sr-only">{t.settings.granted}</span>
+            </button>
+          </li>
+        </ul>
+      ) : null}
+    </section>
+  );
+}
+
+function YourData() {
+  const { t } = useI18n();
+  const toast = useToast();
+  const [busy, setBusy] = useState(false);
+  const download = async () => {
+    setBusy(true);
+    try {
+      const data = await api.exportMyData();
+      const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }));
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `kickscout-data-${new Date().toISOString().slice(0, 10)}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+      toast.show(t.settings.dataReady, { tone: 'success' });
+    } catch (e) { toast.show(errorMessage(e, t), { tone: 'error' }); } finally { setBusy(false); }
+  };
+  return (
+    <section className="card" aria-labelledby="s-data" id="data">
+      <h2 className="section-title" id="s-data">{t.settings.dataSection}</h2>
+      <p className="muted small">{t.settings.dataText}</p>
+      <div><Button onClick={download} loading={busy} data-testid="export-data">{t.settings.dataDownload}</Button></div>
+    </section>
+  );
+}
+
+function DeleteAccount({ minor, onDeleted }: { minor: boolean; onDeleted: () => Promise<void> }) {
+  const { t } = useI18n();
+  const toast = useToast();
+  const [confirm, setConfirm] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [pending, setPending] = useState(false);
+  const submit = async (e: FormEvent) => {
+    e.preventDefault();
+    if (confirm !== 'DELETE') return;
+    setBusy(true);
+    try {
+      const r = await api.deleteMyAccount({ confirm: 'DELETE' });
+      if (r.status === 'pending_guardian') { setPending(true); return; }
+      toast.show(t.settings.deleteDone, { tone: 'success' });
+      await onDeleted();
+    } catch (err) { toast.show(errorMessage(err, t), { tone: 'error' }); } finally { setBusy(false); }
+  };
+  return (
+    <form className="card" onSubmit={submit} aria-labelledby="s-del" id="delete">
+      <h2 className="section-title" id="s-del">{t.settings.deleteSection}</h2>
+      <p className="small">{t.settings.deleteIntro}</p>
+      <ul className="small">
+        <li>{t.settings.deleteConsequence1}</li>
+        <li>{t.settings.deleteConsequence2}</li>
+        <li>{t.settings.deleteConsequence3}</li>
+        <li>{t.settings.deleteConsequence4}</li>
+      </ul>
+      {minor ? <p className="notice notice--warn small">{t.settings.deleteMinorNote}</p> : null}
+      {pending ? <p className="notice notice--accent small" role="status">{t.settings.deletePending}</p> : (
+        <>
+          <label className="field"><span className="field__label">{t.settings.deleteConfirmLabel}</span>
+            <input className="input" autoComplete="off" spellCheck={false} value={confirm} onChange={(e) => setConfirm(e.target.value)}
+              data-testid="delete-confirm" /></label>
+          <div><Button type="submit" variant="danger" loading={busy} disabled={confirm !== 'DELETE'}>{t.settings.deleteCta}</Button></div>
+        </>
+      )}
+    </form>
   );
 }

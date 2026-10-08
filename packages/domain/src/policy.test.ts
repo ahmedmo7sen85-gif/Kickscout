@@ -64,4 +64,31 @@ describe('can()', () => {
     expect(can(actor(), { ...c, commentsSetting: 'followers' }).allowed).toBe(false);
     expect(can(actor(), { ...c, commentsSetting: 'everyone', blocked: true }).allowed).toBe(false);
   });
+
+  it('lets a minor tighten privacy but only the guardian loosen it, and only after public-profile consent', () => {
+    const kid = actor({ ageBand: 'u16' });
+    const change = { kind: 'privacy.update', subjectId: 'a', subjectMinor: true, publicProfileConsent: true } as const;
+    expect(can(kid, { ...change, loosens: false, opensProfile: false }).allowed).toBe(true);
+    expect(can(kid, { ...change, loosens: true, opensProfile: true })).toMatchObject({ code: 'GUARDIAN_REQUIRED' });
+    const guardian = actor({ userId: 'g', guardianOf: ['a'] });
+    expect(can(guardian, { ...change, loosens: true, opensProfile: true }).allowed).toBe(true);
+    expect(can(guardian, { ...change, loosens: true, opensProfile: true, publicProfileConsent: false })).toMatchObject({ code: 'GUARDIAN_REQUIRED' });
+    expect(can(actor({ userId: 'x' }), { ...change, subjectMinor: false, loosens: false, opensProfile: false })).toMatchObject({ code: 'FORBIDDEN' });
+  });
+
+  it('routes a minor’s account deletion through a linked guardian', () => {
+    const del = { kind: 'account.delete', subjectId: 'a' } as const;
+    expect(can(actor(), { ...del, subjectMinor: false, subjectHasGuardian: false }).allowed).toBe(true);
+    expect(can(actor({ ageBand: 'u16' }), { ...del, subjectMinor: true, subjectHasGuardian: true })).toMatchObject({ code: 'GUARDIAN_REQUIRED' });
+    expect(can(actor({ userId: 'g', guardianOf: ['a'] }), { ...del, subjectMinor: true, subjectHasGuardian: true }).allowed).toBe(true);
+    expect(can(actor({ userId: 'x' }), { ...del, subjectMinor: false, subjectHasGuardian: false })).toMatchObject({ code: 'FORBIDDEN' });
+    // An account still waiting for guardian consent may ask to be deleted.
+    expect(can(actor({ ageBand: 'u16', status: 'pending_consent' }), { ...del, subjectMinor: true, subjectHasGuardian: true })).toMatchObject({ code: 'GUARDIAN_REQUIRED' });
+  });
+
+  it('lets only the uploader, or a minor’s guardian, file a counter-notice', () => {
+    expect(can(actor(), { kind: 'copyright.counter_notice', ownerId: 'a', ownerMinor: false }).allowed).toBe(true);
+    expect(can(actor(), { kind: 'copyright.counter_notice', ownerId: 'b', ownerMinor: false }).allowed).toBe(false);
+    expect(can(actor({ ageBand: 'u16' }), { kind: 'copyright.counter_notice', ownerId: 'a', ownerMinor: true })).toMatchObject({ code: 'GUARDIAN_REQUIRED' });
+  });
 });

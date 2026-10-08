@@ -16,6 +16,9 @@ describe('client enum copies match the contracts', () => {
     ['VIDEO_CONTEXTS', L.VIDEO_CONTEXTS, C.VideoContext.options],
     ['VISIBILITIES', L.VISIBILITIES, C.Visibility.options],
     ['CONSENT_PURPOSES', L.CONSENT_PURPOSES, C.ConsentPurpose.options],
+    ['PROFILE_VISIBILITIES', L.PROFILE_VISIBILITIES, C.ProfileVisibility.options],
+    ['NOTIFICATION_PREFERENCE_KEYS', L.NOTIFICATION_PREFERENCE_KEYS, Object.keys(C.NotificationPreferencesView.shape).filter((k) => k !== 'security')],
+    ['PRIVACY_TOGGLES', [...L.PRIVACY_TOGGLES].sort(), Object.keys(C.PrivacySettingsView.shape).filter((k) => /^(allow|show)/.test(k)).sort()],
   ])('%s', (_name, local, contract) => {
     expect([...local]).toEqual([...contract]);
   });

@@ -32,7 +32,7 @@ export function videoQuery(db: Database) {
       'videos.playback_key', 'videos.thumbnail_key', 'videos.duration_ms', 'videos.created_at', 'videos.published_at',
       'profiles.handle', 'profiles.display_name', 'profiles.avatar_key', 'profiles.verified_at', 'users.is_demo',
       'regions.country_code', 'privacy_settings.region_precision', 'privacy_settings.profile_visibility',
-      'privacy_settings.comments as comments_setting',
+      'privacy_settings.comments as comments_setting', 'privacy_settings.show_country', 'users.status as owner_status',
     ]);
 }
 type VideoQuery = ReturnType<typeof videoQuery>;
@@ -40,13 +40,14 @@ export type VideoRow = Awaited<ReturnType<VideoQuery['executeTakeFirstOrThrow']>
 
 /**
  * Restricts a video query to what anyone may discover: published, public, from an active public
- * profile, and not between users who blocked each other.
+ * profile, and not between users who blocked each other. Unlisted profiles are left out of every
+ * list except their own profile page (`includeUnlisted`), which is reached by direct link.
  */
-export function discoverable(q: VideoQuery, viewer: Actor | null): VideoQuery {
+export function discoverable(q: VideoQuery, viewer: Actor | null, opts: { includeUnlisted?: boolean } = {}): VideoQuery {
   let out = q
     .where('videos.status', '=', 'published')
     .where('videos.visibility', '=', 'public')
-    .where('privacy_settings.profile_visibility', '=', 'public')
+    .where('privacy_settings.profile_visibility', 'in', opts.includeUnlisted ? ['public', 'unlisted'] : ['public'])
     .where('users.status', '=', 'active');
   if (viewer) {
     const me = viewer.userId;
@@ -87,7 +88,8 @@ export async function toVideoViews(deps: Deps, viewer: Actor | null, rows: Video
   const [likeCounts, saveCounts, commentCounts, myLikes, mySaves, tags, hashtags] = await Promise.all([
     count('likes'),
     count('saves'),
-    db.selectFrom('comments').select(['video_id', db.fn.countAll<string>().as('n')]).where('video_id', 'in', ids).where('moderation', '=', 'visible').groupBy('video_id').execute(),
+    db.selectFrom('comments').innerJoin('users', 'users.id', 'comments.author_id').select(['comments.video_id', db.fn.countAll<string>().as('n')])
+      .where('comments.video_id', 'in', ids).where('comments.moderation', '=', 'visible').where('users.status', '!=', 'deleted').groupBy('comments.video_id').execute(),
     viewer ? db.selectFrom('likes').select('video_id').where('video_id', 'in', ids).where('user_id', '=', viewer.userId).execute() : Promise.resolve([]),
     viewer ? db.selectFrom('saves').select('video_id').where('video_id', 'in', ids).where('user_id', '=', viewer.userId).execute() : Promise.resolve([]),
     db.selectFrom('video_skills').innerJoin('skills', 'skills.key', 'video_skills.skill_key')
@@ -126,7 +128,7 @@ export async function toVideoViews(deps: Deps, viewer: Actor | null, rows: Video
       position: r.position as never,
       foot: r.foot as never,
       context: r.context as never,
-      country: r.region_precision === 'macro' ? null : r.country_code,
+      country: r.region_precision === 'macro' || !r.show_country ? null : r.country_code,
       visibility: r.visibility as never,
       tags: [...bySkill.values()]
         .sort((a, b) => (a.source === b.source ? a.sort_order - b.sort_order : a.source === 'user' ? -1 : 1))
@@ -155,7 +157,8 @@ export async function visibleVideo(deps: Deps, viewer: Actor | null, videoId: st
   const relation = await relationTo(deps.db, viewer, row.owner_user_id);
   const privileged = relation === 'self' || relation === 'guardian' || relation === 'admin' || relation === 'moderator';
   if (!privileged) {
-    if (row.status !== 'published') throw notFound('video');
+    // Suspended and deleted accounts take their videos with them.
+    if (row.status !== 'published' || row.owner_status !== 'active') throw notFound('video');
     if (row.visibility === 'private' || row.profile_visibility === 'private') throw notFound('video');
     if ((row.visibility === 'followers' || row.profile_visibility === 'followers') && relation !== 'follower') throw notFound('video');
     if (viewer && (await blockedEitherWay(deps.db, viewer.userId, row.owner_user_id))) throw notFound('video');
@@ -267,6 +270,7 @@ export const mediaRoutes = [
           trim_start_ms: b.trimStartMs ?? null,
           trim_end_ms: b.trimEndMs ?? null,
           max_duration_ms: ctx.deps.config.MAX_VIDEO_SECONDS * 1000,
+          rights_confirmed_at: ctx.deps.now(),
         }).execute();
         await replaceHashtags(tx, videoId, b.hashtags);
         if (b.skillKey) await tx.insertInto('video_skills').values({ video_id: videoId, skill_key: b.skillKey, source: 'user' }).execute();

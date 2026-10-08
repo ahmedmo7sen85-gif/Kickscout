@@ -13,7 +13,7 @@ export const KNOWN_ERROR_CODES = [
   'CONSENT_REQUIRED', 'GUARDIAN_REQUIRED', 'SCOUT_VERIFICATION_REQUIRED', 'CONTACT_NOT_ALLOWED', 'MFA_REQUIRED',
   'NOT_REGISTERED', 'UNAUTHENTICATED', 'FORBIDDEN', 'NOT_FOUND', 'ROLE_REQUIRED', 'VALIDATION_FAILED', 'HANDLE_TAKEN',
   'UNDER_MINIMUM_AGE', 'ALREADY_REGISTERED', 'ACCOUNT_INACTIVE', 'BLOCKED', 'COMMENTS_OFF', 'FOLLOWERS_ONLY', 'SELF_FOLLOW',
-  'RATE_LIMITED', 'NETWORK_ERROR', 'UPLOAD_FAILED', 'INTERNAL',
+  'RATE_LIMITED', 'NETWORK_ERROR', 'UPLOAD_FAILED', 'INTERNAL', 'VIDEO_REQUIRED', 'NOT_REMOVED_FOR_COPYRIGHT', 'ALREADY_PENDING',
 ] as const;
 export type KnownErrorCode = (typeof KNOWN_ERROR_CODES)[number];
 
@@ -183,6 +183,18 @@ export function createApiClient(opts: ApiClientOptions = {}) {
     contactRequests: (direction: 'incoming' | 'outgoing', s?: AbortSignal) => get<T.ContactRequestList>('/v1/contact-requests', { direction }, s),
     respondContact: (id: string, b: T.ContactResponseRequest) => send<T.ContactRequestView>('POST', `/v1/contact-requests/${e(id)}/respond`, b),
     requestVerification: (b: T.VerificationRequestCreate) => send<T.VerificationRequestView>('POST', '/v1/verification-requests', b),
+
+    // privacy, notifications preferences, account
+    privacy: (userId: string, s?: AbortSignal) => get<T.PrivacySettingsView>(`/v1/users/${e(userId)}/privacy`, undefined, s),
+    updatePrivacy: (userId: string, b: T.UpdatePrivacyRequest) => send<T.PrivacySettingsView>('PATCH', `/v1/users/${e(userId)}/privacy`, b),
+    notificationPreferences: (s?: AbortSignal) => get<T.NotificationPreferencesView>('/v1/me/notification-preferences', undefined, s),
+    updateNotificationPreferences: (b: T.UpdateNotificationPreferencesRequest) => send<T.NotificationPreferencesView>('PATCH', '/v1/me/notification-preferences', b),
+    exportMyData: () => get<T.AccountExport>('/v1/me/export'),
+    deleteMyAccount: (b: T.DeleteAccountRequest) => send<T.DeleteAccountResponse>('DELETE', '/v1/me', b),
+
+    // copyright
+    copyrightTakedown: (b: T.CopyrightTakedownRequest) => send<T.CopyrightTakedownResponse>('POST', '/v1/copyright/takedowns', b),
+    counterNotice: (videoId: string, b: T.CounterNoticeRequest) => send<void>('POST', `/v1/videos/${e(videoId)}/counter-notice`, b),
 
     // notifications
     notifications: (q?: { cursor?: string }, s?: AbortSignal) => get<T.NotificationPage>('/v1/notifications', q, s),

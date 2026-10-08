@@ -40,7 +40,7 @@ async function player(sub: string) {
   return { token, userId: r.body.userId as string };
 }
 
-const start = (token: string) => call('POST', '/v1/uploads', token, { contentType: 'video/mp4', sizeBytes: 1000, title: 'Rabona' });
+const start = (token: string) => call('POST', '/v1/uploads', token, { contentType: 'video/mp4', sizeBytes: 1000, title: 'Rabona', rightsConfirmed: true });
 
 describe('upload quotas', () => {
   it('records the plan length limit on the video and caps live videos', async () => {

@@ -28,7 +28,9 @@ export async function loadStoredProfile(db: Database, userId: string): Promise<S
     .select([
       'users.id', 'users.email', 'users.status', 'profiles.handle', 'profiles.display_name', 'profiles.bio', 'profiles.avatar_key',
       'profiles.region_id', 'age_records.age_band', 'privacy_settings.profile_visibility', 'privacy_settings.region_precision',
-      'privacy_settings.direct_messages', 'privacy_settings.comments', 'player_profiles.user_id as player_id',
+      'privacy_settings.direct_messages', 'privacy_settings.comments', 'privacy_settings.allow_scout_discovery',
+      'privacy_settings.allow_contact_requests', 'privacy_settings.show_country', 'privacy_settings.show_region',
+      'privacy_settings.show_age', 'player_profiles.user_id as player_id',
       'player_profiles.primary_position', 'player_profiles.secondary_positions', 'player_profiles.preferred_foot',
     ])
     .where('users.id', '=', userId)
@@ -49,6 +51,11 @@ export async function loadStoredProfile(db: Database, userId: string): Promise<S
       regionPrecision: row.region_precision as StoredProfile['privacy']['regionPrecision'],
       directMessages: row.direct_messages,
       comments: row.comments as StoredProfile['privacy']['comments'],
+      allowScoutDiscovery: row.allow_scout_discovery,
+      allowContactRequests: row.allow_contact_requests,
+      showCountry: row.show_country,
+      showRegion: row.show_region,
+      showAge: row.show_age,
     },
     player: row.player_id
       ? {
@@ -135,7 +142,8 @@ export async function playerCards(deps: Deps, viewer: Actor | null, userIds: rea
       .leftJoin('player_profiles', 'player_profiles.user_id', 'users.id')
       .leftJoin('regions', 'regions.id', 'profiles.region_id')
       .select(['users.id', 'users.is_demo', 'profiles.handle', 'profiles.display_name', 'profiles.avatar_key', 'profiles.verified_at',
-        'age_records.age_band', 'privacy_settings.region_precision', 'regions.country_code', 'player_profiles.primary_position',
+        'age_records.age_band', 'privacy_settings.region_precision', 'privacy_settings.show_country', 'privacy_settings.show_age',
+        'regions.country_code', 'player_profiles.primary_position',
         'player_profiles.preferred_foot'])
       .where('users.id', 'in', ids).execute(),
     deps.db.selectFrom('follows').select(['followee_id', deps.db.fn.countAll<string>().as('n')]).where('followee_id', 'in', ids).groupBy('followee_id').execute(),
@@ -157,7 +165,9 @@ export async function playerCards(deps: Deps, viewer: Actor | null, userIds: rea
     const r = byId.get(id);
     if (!r) return [];
     const minor = isMinor(r.age_band as never);
-    const ageVisible = !minor || privilegedViewer || viewer?.userId === id || Boolean(viewer?.guardianOf.includes(id));
+    const own = viewer?.userId === id || Boolean(viewer?.guardianOf.includes(id));
+    // show_age off hides the age group from everyone but the player and their guardian.
+    const ageVisible = own || (r.show_age && (!minor || privilegedViewer));
     return [{
       userId: r.id,
       handle: r.handle,
@@ -165,7 +175,7 @@ export async function playerCards(deps: Deps, viewer: Actor | null, userIds: rea
       avatarUrl: r.avatar_key ? mediaUrl(deps.config.CDN_BASE_URL, r.avatar_key) : null,
       verified: r.verified_at !== null,
       isDemo: r.is_demo,
-      country: r.region_precision === 'macro' ? null : r.country_code,
+      country: r.region_precision === 'macro' || !r.show_country ? null : r.country_code,
       position: r.primary_position as Position | null,
       foot: r.preferred_foot as 'left' | 'right' | 'both' | null,
       ageGroup: ageVisible ? (r.age_band as never) : null,

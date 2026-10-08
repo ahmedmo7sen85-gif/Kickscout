@@ -17,7 +17,12 @@ export const RADAR_DISCLAIMER = {
   ar: 'يعرض رادار المواهب اللاعبين الذين يلفتون الانتباه الآن بناءً على الإعجابات والمشاهدات والمتابعين. وهو ليس حكمًا على المهارة أو الإمكانات.',
 };
 
-/** Players anyone may discover: active, public profile, player role, not blocked either way. */
+/**
+ * Players anyone may discover: active, public profile, player role, scout discovery allowed, not
+ * blocked either way. Every player listing (search, Discover, Talent Radar, scout search and the
+ * scout actions) starts here, so unlisted, private and discovery-off players never appear in one.
+ * Signed-out visitors cannot be told apart from scouts, so discovery-off applies to everyone.
+ */
 export function discoverablePlayers(deps: Deps, viewer: Actor | null) {
   let q = deps.db.selectFrom('users')
     .innerJoin('profiles', 'profiles.user_id', 'users.id')
@@ -26,7 +31,8 @@ export function discoverablePlayers(deps: Deps, viewer: Actor | null) {
     .leftJoin('player_profiles', 'player_profiles.user_id', 'users.id')
     .leftJoin('regions', 'regions.id', 'profiles.region_id')
     .where('users.status', '=', 'active')
-    .where('privacy_settings.profile_visibility', '=', 'public');
+    .where('privacy_settings.profile_visibility', '=', 'public')
+    .where('privacy_settings.allow_scout_discovery', '=', true);
   if (viewer) {
     const me = viewer.userId;
     q = q.where(({ not, exists, selectFrom, or, and }) => not(exists(selectFrom('blocks').select('blocker_id').where((b) => or([
@@ -41,7 +47,10 @@ type PlayerQuery = ReturnType<typeof discoverablePlayers>;
 export function filterPlayers(q: PlayerQuery, f: { q?: string; country?: string; position?: string; foot?: string; skill?: string }) {
   if (f.q) q = q.where((eb) => eb.or([eb('profiles.handle', 'ilike', likePattern(f.q!)), eb('profiles.display_name', 'ilike', likePattern(f.q!))]));
   // Country is only searchable where the player shows it.
-  if (f.country) q = q.where('regions.country_code', '=', f.country).where('privacy_settings.region_precision', '!=', 'macro');
+  if (f.country) {
+    q = q.where('regions.country_code', '=', f.country).where('privacy_settings.region_precision', '!=', 'macro')
+      .where('privacy_settings.show_country', '=', true);
+  }
   if (f.position) q = q.where('player_profiles.primary_position', '=', f.position);
   if (f.foot) q = q.where('player_profiles.preferred_foot', '=', f.foot);
   if (f.skill) {
@@ -141,7 +150,10 @@ export const catalogRoutes = [
       if (hashtag) vq = vq.where('videos.id', 'in', (eb) => eb.selectFrom('video_hashtags').select('video_id').where('tag', '=', hashtag));
       if (f.position) vq = vq.where('videos.position', '=', f.position);
       if (f.foot) vq = vq.where('videos.foot', '=', f.foot);
-      if (f.country) vq = vq.where('regions.country_code', '=', f.country).where('privacy_settings.region_precision', '!=', 'macro');
+      if (f.country) {
+        vq = vq.where('regions.country_code', '=', f.country).where('privacy_settings.region_precision', '!=', 'macro')
+          .where('privacy_settings.show_country', '=', true);
+      }
       const videoRows = want('videos') ? await vq.orderBy('videos.published_at', 'desc').limit(limit).execute() : [];
 
       const tags = want('hashtags') && (f.q || hashtag)
@@ -211,7 +223,8 @@ export const catalogRoutes = [
       } else if (relation === 'follower') {
         q = q.where('videos.visibility', 'in', ['public', 'followers']).where('privacy_settings.profile_visibility', '!=', 'private');
       } else {
-        q = discoverable(q, ctx.actor);
+        // The profile page is a direct link, so an unlisted player's public clips show here and nowhere else.
+        q = discoverable(q, ctx.actor, { includeUnlisted: true });
       }
       return pageOfVideos(ctx.deps, ctx.actor, q, ctx.query);
     },

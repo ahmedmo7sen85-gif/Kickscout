@@ -14,10 +14,10 @@ import { newId } from './platform/ids.js';
 
 export const PROMO_CLIPS = [
   ['01_stepover', 'step_over'], ['02_elastico', 'elastico'], ['03_rainbow_flick', 'rainbow_flick'], ['04_cruyff_turn', 'cruyff_turn'],
-  ['05_roulette', 'roulette'], ['06_nutmeg', 'nutmeg'], ['07_la_croqueta', 'dribbling'], ['08_first_touch', 'first_touch'],
-  ['09_juggling', 'juggling'], ['10_ball_mastery', 'ball_control'], ['11_outside_foot_pass', 'passing'], ['12_long_range_shot', 'shooting'],
+  ['05_roulette', 'roulette'], ['06_nutmeg', 'nutmeg'], ['07_la_croqueta', 'la_croqueta'], ['08_first_touch', 'first_touch'],
+  ['09_juggling', 'juggling'], ['10_ball_mastery', 'ball_mastery'], ['11_outside_foot_pass', 'passing'], ['12_long_range_shot', 'long_range_shooting'],
   ['13_free_kick', 'free_kick'], ['14_volley', 'volley'], ['15_speed_dribble', 'speed'], ['16_1v1_showcase', 'one_v_one'],
-  ['17_ball_recovery', 'defending'], ['18_skill_combo', 'freestyle'], ['19_talent_showcase', 'dribbling'], ['20_hero_your_skill_your_moment', 'dribbling'],
+  ['17_ball_recovery', 'defending'], ['18_skill_combo', 'skill_combo'], ['19_talent_showcase', 'dribbling'], ['20_hero_your_skill_your_moment', 'dribbling'],
 ] as const;
 
 const PLAYERS = [
@@ -59,7 +59,7 @@ export async function seed(databaseUrl: string, dobKey: Buffer, mediaPrefix = 'p
       await tx.insertInto('videos').values({
         id, owner_user_id: owner, status: 'published', original_key: `demo/${stem}.mp4`, declared_type: 'video/mp4', size_bytes: 1,
         title: `${title} (AI-generated demo)`, description: 'AI-generated promotional clip used as demo content.', skill_key: skill,
-        context: 'freestyle', visibility: 'public', duration_ms: 5000, width: 704, height: 1280,
+        context: 'skill', visibility: 'public', duration_ms: 5000, width: 704, height: 1280,
         playback_key: `${mediaPrefix}/${stem}.mp4`, thumbnail_key: `${mediaPrefix}/${stem}.jpg`, moderation: 'safe', created_at: at, published_at: at,
       }).execute();
       // Curated tags, entered as the uploader's own tags: no AI output is faked.
