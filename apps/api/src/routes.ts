@@ -10,8 +10,9 @@ import { scoutRoutes } from './modules/scout.js';
 import { moderationRoutes } from './modules/moderation.js';
 import { accountRoutes } from './modules/account.js';
 import { copyrightRoutes } from './modules/copyright.js';
+import { billingRoutes } from './modules/billing.js';
 
 export const routes: ApiRoute[] = [
   ...onboardingRoutes, ...profileRoutes, ...mediaRoutes, ...feedRoutes, ...socialRoutes, ...catalogRoutes,
-  ...challengeRoutes, ...scoutRoutes, ...moderationRoutes, ...accountRoutes, ...copyrightRoutes,
+  ...challengeRoutes, ...scoutRoutes, ...moderationRoutes, ...accountRoutes, ...copyrightRoutes, ...billingRoutes,
 ];

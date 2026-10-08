@@ -4,6 +4,7 @@ import { buildApp } from './app.js';
 import { JwtVerifier } from './platform/auth.js';
 import { S3Storage } from './platform/storage.js';
 import { LogMailer } from './platform/mailer.js';
+import { StripePaymentProvider } from './platform/billing/stripe.js';
 import type { Deps } from './deps.js';
 
 /** Builds the configured app; shared by the long-running server (main.ts) and the Vercel function (vercel.ts). */
@@ -24,6 +25,7 @@ export async function createServer(opts: { poolSize?: number } = {}) {
       if (!mailer) throw new Error('mailer not initialised');
       return mailer;
     },
+    billing: config.STRIPE_SECRET_KEY && config.STRIPE_WEBHOOK_SECRET ? new StripePaymentProvider(config.STRIPE_SECRET_KEY, config.STRIPE_WEBHOOK_SECRET) : null,
     dobKey: Buffer.from(config.DOB_ENCRYPTION_KEY, 'base64'),
     now: () => new Date(),
   };

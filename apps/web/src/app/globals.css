@@ -509,3 +509,10 @@ code, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-
 .check-row { display: flex; gap: 0.7rem; align-items: flex-start; padding: 0.65rem 0.85rem; border: 1px solid var(--rule); border-radius: var(--radius-sm); cursor: pointer; }
 .check-row input { accent-color: var(--accent); margin-block-start: 0.25rem; flex: none; }
 .check-row.is-checked { border-color: var(--accent); }
+
+/* ---------------------------------------------------------------- pricing */
+.grid-plans { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 16rem), 1fr)); gap: 1rem; align-items: stretch; }
+.plan-card { display: flex; flex-direction: column; }
+.plan-card__price strong { font-size: 1.8rem; font-weight: 800; letter-spacing: -0.01em; }
+.plan-card__list { margin: 0; padding-inline-start: 1.1rem; display: grid; gap: 0.35rem; color: var(--text-2); }
+.plan-card__action { display: grid; gap: 0.4rem; margin-top: auto; }

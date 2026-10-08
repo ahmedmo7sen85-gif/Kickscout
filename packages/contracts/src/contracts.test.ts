@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import {
-  CopyrightTakedownRequest, CreateUploadRequest, DeleteAccountRequest, Position, RegisterRequest, SkillKey, UpdateNotificationPreferencesRequest,
+  CheckoutRequest, CouponValidateRequest, PlanList, CopyrightTakedownRequest, CreateUploadRequest, DeleteAccountRequest, Position, RegisterRequest, SkillKey, UpdateNotificationPreferencesRequest,
   VideoCategory, buildOpenApi,
 } from './index.js';
 
@@ -62,5 +62,23 @@ describe('contracts', () => {
     const op = (doc.paths['/v1/things/{thingId}'] as Record<string, any>).get;
     expect(op.parameters.map((p: { name: string }) => p.name)).toEqual(['thingId', 'limit']);
     expect(op.security).toEqual([{ bearer: [] }]);
+  });
+
+  it('accepts only month or year billing and ISO currency codes at checkout, defaulting to USD', () => {
+    expect(CheckoutRequest.parse({ planKey: 'player_pro', interval: 'year' })).toEqual({ planKey: 'player_pro', interval: 'year', currency: 'USD' });
+    expect(CheckoutRequest.safeParse({ planKey: 'player_pro', interval: 'week' }).success).toBe(false);
+    expect(CheckoutRequest.safeParse({ planKey: 'player_pro', interval: 'month', currency: 'usd' }).success).toBe(false);
+    expect(CheckoutRequest.safeParse({ planKey: 'Player Pro', interval: 'month' }).success).toBe(false);
+    expect(CouponValidateRequest.safeParse({ code: 'no spaces here', planKey: 'player_pro' }).success).toBe(false);
+  });
+
+  it('marks unlimited quotas as null in plan limits', () => {
+    const plan = {
+      key: 'scout_pro', audience: 'scout', tier: 'pro', name: { en: 'Scout Pro', ar: 'x' }, description: { en: 'd', ar: 'd' }, checkout: 'self_serve',
+      trialDays: 14, prices: [{ currency: 'USD', interval: 'month', amountMinor: 2900 }], features: [{ key: 'FEATURE_PRO_ANALYTICS', status: 'coming_soon' }],
+      limits: { maxVideoSeconds: 60, maxActiveVideos: 20, maxUploadsPerDay: 10, scoutSearchesPerMonth: null, shortlistSlots: null, seats: 1 },
+    };
+    expect(PlanList.safeParse({ currency: 'USD', paymentsEnabled: false, items: [plan] }).success).toBe(true);
+    expect(PlanList.safeParse({ currency: 'USD', paymentsEnabled: false, items: [{ ...plan, limits: { ...plan.limits, maxVideoSeconds: null } }] }).success).toBe(false);
   });
 });

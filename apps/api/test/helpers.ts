@@ -11,6 +11,7 @@ import type { ObjectStorage } from '../src/platform/storage.js';
 import type { Mailer } from '../src/platform/mailer.js';
 import type { Config } from '../src/config.js';
 import type { Deps } from '../src/deps.js';
+import type { PaymentProvider } from '../src/platform/billing/provider.js';
 
 const ADMIN_URL = process.env.TEST_DATABASE_ADMIN_URL ?? 'postgres://fp:fp@localhost:5432/postgres';
 const ISSUER = 'https://idp.test/';
@@ -44,7 +45,7 @@ export interface TestEnv {
   close(): Promise<void>;
 }
 
-export async function createTestEnv(overrides: Partial<Config> = {}): Promise<TestEnv> {
+export async function createTestEnv(overrides: Partial<Config> = {}, opts: { billing?: PaymentProvider | null } = {}): Promise<TestEnv> {
   const dbName = `fp_test_${randomBytes(6).toString('hex')}`;
   const admin = new pg.Client({ connectionString: ADMIN_URL });
   await admin.connect();
@@ -65,10 +66,10 @@ export async function createTestEnv(overrides: Partial<Config> = {}): Promise<Te
     NODE_ENV: 'test', PORT: 0, DATABASE_URL: url.toString(), AUTH_JWKS_URL: 'https://idp.test/jwks', AUTH_ISSUER: ISSUER,
     AUTH_AUDIENCE: AUDIENCE, S3_REGION: 'eu-central-1', S3_BUCKET_ORIGINALS: 'test', S3_FORCE_PATH_STYLE: true, CDN_BASE_URL: 'https://cdn.test',
     DOB_ENCRYPTION_KEY: randomBytes(32).toString('base64'), VIEWER_HASH_SECRET: randomBytes(32).toString('hex'), MAILER: 'log', ALLOW_LOG_MAILER: 'no', RATE_LIMIT_STORE: 'memory', MAX_VIDEO_SECONDS: 60, MAX_ACTIVE_VIDEOS: 20, MAX_UPLOADS_PER_DAY: 10, POLICY_VERSION: 'test-1',
-    CORS_ORIGINS: 'https://web.test',
+    CORS_ORIGINS: 'https://web.test', WEB_APP_URL: 'https://web.test',
   } satisfies Config;
   Object.assign(config, overrides);
-  const deps: Deps = { config, db, verifier, storage, mailer, dobKey: Buffer.from(config.DOB_ENCRYPTION_KEY, 'base64'), now: () => new Date() };
+  const deps: Deps = { config, db, verifier, storage, mailer, billing: opts.billing ?? null, dobKey: Buffer.from(config.DOB_ENCRYPTION_KEY, 'base64'), now: () => new Date() };
   const app = await buildApp(deps, { logger: false });
 
   return {

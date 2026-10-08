@@ -46,6 +46,20 @@ export interface AuditLogs {
   target_kind: string | null;
 }
 
+export interface BillingCustomers {
+  created_at: Generated<Timestamp>;
+  provider: string;
+  provider_customer_id: string;
+  user_id: string;
+}
+
+export interface BillingEvents {
+  event_id: string;
+  processed_at: Generated<Timestamp>;
+  provider: string;
+  type: string;
+}
+
 export interface Blocks {
   blocked_id: string;
   blocker_id: string;
@@ -70,6 +84,20 @@ export interface Challenges {
   slug: string;
   starts_at: Timestamp;
   title: Json;
+}
+
+export interface CheckoutSessions {
+  completed_at: Timestamp | null;
+  coupon_code: string | null;
+  created_at: Generated<Timestamp>;
+  payer_user_id: string;
+  plan_key: string;
+  price_id: string;
+  provider: string;
+  provider_session_id: string;
+  status: Generated<string>;
+  trial_days: Generated<number>;
+  user_id: string;
 }
 
 export interface Comments {
@@ -127,6 +155,33 @@ export interface CopyrightCounterNotices {
   status: Generated<string>;
   submitted_by: string;
   video_id: string;
+}
+
+export interface CouponRedemptions {
+  code: string;
+  created_at: Generated<Timestamp>;
+  provider_session_id: string;
+  user_id: string;
+}
+
+export interface Coupons {
+  active: Generated<boolean>;
+  amount_off_minor: number | null;
+  code: string;
+  created_at: Generated<Timestamp>;
+  currency: string | null;
+  description: string | null;
+  duration: Generated<string>;
+  duration_months: number | null;
+  kind: Generated<string>;
+  max_redemptions: number | null;
+  percent_off: number | null;
+  plan_keys: string[] | null;
+  provider_promotion_code_id: string | null;
+  redeemed_count: Generated<number>;
+  referrer_user_id: string | null;
+  valid_from: Timestamp | null;
+  valid_until: Timestamp | null;
 }
 
 export interface Follows {
@@ -238,6 +293,33 @@ export interface Outbox {
   topic: string;
 }
 
+export interface PlanPrices {
+  active: Generated<boolean>;
+  amount_minor: number;
+  billing_interval: string;
+  created_at: Generated<Timestamp>;
+  currency: string;
+  id: string;
+  plan_key: string;
+  provider_price_id: string | null;
+}
+
+export interface Plans {
+  active: Generated<boolean>;
+  audience: string;
+  checkout_mode: string;
+  created_at: Generated<Timestamp>;
+  descriptions: Json;
+  features: Generated<string[]>;
+  key: string;
+  limits: Generated<Json>;
+  names: Json;
+  sort_order: Generated<number>;
+  tier: string;
+  trial_days: Generated<number>;
+  updated_at: Generated<Timestamp>;
+}
+
 export interface PlayerProfiles {
   created_at: Generated<Timestamp>;
   height_cm: number | null;
@@ -271,6 +353,12 @@ export interface Profiles {
   updated_at: Generated<Timestamp>;
   user_id: string;
   verified_at: Timestamp | null;
+}
+
+export interface RateLimitHits {
+  count: number;
+  key: string;
+  reset_at: Timestamp;
 }
 
 export interface Regions {
@@ -327,6 +415,34 @@ export interface Skills {
   key: string;
   names: Json;
   sort_order: Generated<number>;
+}
+
+export interface Subscriptions {
+  amount_minor: number | null;
+  billing_interval: string | null;
+  cancel_at_period_end: Generated<boolean>;
+  canceled_at: Timestamp | null;
+  created_at: Generated<Timestamp>;
+  currency: string | null;
+  current_period_end: Timestamp | null;
+  id: string;
+  payer_user_id: string | null;
+  plan_key: string;
+  provider: string;
+  provider_customer_id: string | null;
+  provider_event_at: Timestamp;
+  provider_subscription_id: string;
+  status: string;
+  trial_end: Timestamp | null;
+  updated_at: Generated<Timestamp>;
+  user_id: string;
+}
+
+export interface UsageCounters {
+  count: Generated<number>;
+  metric: string;
+  period: string;
+  user_id: string;
 }
 
 export interface UserRoles {
@@ -419,23 +535,22 @@ export interface VideoViews {
   viewer_key: string;
 }
 
-export interface RateLimitHits {
-  count: number;
-  key: string;
-  reset_at: Timestamp;
-}
-
 export interface DB {
   age_records: AgeRecords;
   audit_logs: AuditLogs;
+  billing_customers: BillingCustomers;
+  billing_events: BillingEvents;
   blocks: Blocks;
   challenge_entries: ChallengeEntries;
   challenges: Challenges;
+  checkout_sessions: CheckoutSessions;
   comments: Comments;
   consents: Consents;
   contact_requests: ContactRequests;
   copyright_claims: CopyrightClaims;
   copyright_counter_notices: CopyrightCounterNotices;
+  coupon_redemptions: CouponRedemptions;
+  coupons: Coupons;
   follows: Follows;
   guardian_invitations: GuardianInvitations;
   guardian_relationships: GuardianRelationships;
@@ -447,6 +562,8 @@ export interface DB {
   notification_preferences: NotificationPreferences;
   notifications: Notifications;
   outbox: Outbox;
+  plan_prices: PlanPrices;
+  plans: Plans;
   player_profiles: PlayerProfiles;
   privacy_settings: PrivacySettings;
   profiles: Profiles;
@@ -458,6 +575,8 @@ export interface DB {
   shortlist_players: ShortlistPlayers;
   shortlists: Shortlists;
   skills: Skills;
+  subscriptions: Subscriptions;
+  usage_counters: UsageCounters;
   user_roles: UserRoles;
   users: Users;
   verification_requests: VerificationRequests;

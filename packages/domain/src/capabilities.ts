@@ -30,7 +30,8 @@ export const CAPABILITIES = {
   'scout.compare': 'coming_soon',
   'messaging.direct': 'coming_soon',
   'auth.apple': 'coming_soon',
-  'billing.paid_plans': 'coming_soon',
+  // Built against Stripe test mode only; payments are off until STRIPE_* keys are set.
+  'billing.paid_plans': 'prototype',
 } as const satisfies Record<string, CapabilityStatus>;
 
 export type CapabilityKey = keyof typeof CAPABILITIES;

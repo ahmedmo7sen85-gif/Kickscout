@@ -100,3 +100,17 @@ export type DeleteAccountResponse = z.infer<typeof C.DeleteAccountResponse>;
 export type CopyrightTakedownRequest = z.input<typeof C.CopyrightTakedownRequest>;
 export type CopyrightTakedownResponse = z.infer<typeof C.CopyrightTakedownResponse>;
 export type CounterNoticeRequest = z.input<typeof C.CounterNoticeRequest>;
+
+export type BillingInterval = z.infer<typeof C.BillingInterval>;
+export type PlanAudience = z.infer<typeof C.PlanAudience>;
+export type PlanLimits = z.infer<typeof C.PlanLimits>;
+export type PlanPrice = z.infer<typeof C.PlanPrice>;
+export type PlanView = z.infer<typeof C.PlanView>;
+export type PlanList = z.infer<typeof C.PlanList>;
+export type SubscriptionView = z.infer<typeof C.SubscriptionView>;
+export type EntitlementsView = z.infer<typeof C.EntitlementsView>;
+export type CheckoutRequest = z.input<typeof C.CheckoutRequest>;
+export type CheckoutResponse = z.infer<typeof C.CheckoutResponse>;
+export type PortalResponse = z.infer<typeof C.PortalResponse>;
+export type CouponValidateRequest = z.input<typeof C.CouponValidateRequest>;
+export type CouponView = z.infer<typeof C.CouponView>;

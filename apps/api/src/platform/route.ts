@@ -43,18 +43,20 @@ export interface ApiRoute extends Omit<RouteSpec, 'auth'> {
   auth: AuthMode;
   /** Stricter per-route limit on top of the global one (uploads, comments, reports, contact). */
   rateLimit?: RateLimit;
+  /** The handler reads the exact request bytes as a Buffer (`ctx.req.body`), e.g. to check a webhook signature. */
+  rawBody?: boolean;
   handler: (ctx: Ctx<any, any>) => Promise<unknown>;
 }
 
 export function route<QS extends z.ZodObject | undefined, BS extends z.ZodType | undefined, RS extends z.ZodType | undefined>(
-  spec: Omit<RouteSpec, 'auth' | 'query' | 'body' | 'response'> & { auth: AuthMode; query?: QS; body?: BS; response?: RS; rateLimit?: RateLimit },
+  spec: Omit<RouteSpec, 'auth' | 'query' | 'body' | 'response'> & { auth: AuthMode; query?: QS; body?: BS; response?: RS; rateLimit?: RateLimit; rawBody?: boolean },
   handler: (ctx: Ctx<Out<QS>, Out<BS>>) => Promise<In<RS>>,
 ): ApiRoute {
   return { ...spec, handler } as ApiRoute;
 }
 
 export function toRouteSpec(r: ApiRoute): RouteSpec {
-  const { handler: _h, auth, rateLimit: _r, ...rest } = r;
+  const { handler: _h, auth, rateLimit: _r, rawBody: _b, ...rest } = r;
   return { ...rest, auth: auth !== 'none' };
 }
 

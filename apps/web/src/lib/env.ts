@@ -11,6 +11,8 @@ export const publicEnv = {
   supabaseUrl: process.env.NEXT_PUBLIC_SUPABASE_URL || '',
   supabaseAnonKey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '',
   policyVersion: process.env.NEXT_PUBLIC_POLICY_VERSION || '2026-10-draft',
+  /** Optional: where the Enterprise "Contact sales" button sends email. */
+  salesEmail: process.env.NEXT_PUBLIC_SALES_EMAIL || '',
 };
 
 export const authConfigured = Boolean(publicEnv.supabaseUrl && publicEnv.supabaseAnonKey);

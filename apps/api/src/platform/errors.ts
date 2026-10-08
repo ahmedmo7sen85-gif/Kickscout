@@ -17,7 +17,7 @@ export const conflict = (code: string, reason: string) => new ApiError(409, code
 
 const TITLES: Record<number, string> = {
   400: 'Bad Request', 401: 'Unauthorized', 403: 'Forbidden', 404: 'Not Found', 409: 'Conflict',
-  413: 'Payload Too Large', 422: 'Unprocessable Content', 429: 'Too Many Requests', 500: 'Internal Server Error',
+  413: 'Payload Too Large', 422: 'Unprocessable Content', 429: 'Too Many Requests', 500: 'Internal Server Error', 503: 'Service Unavailable',
 };
 
 export function problemHandler(err: FastifyError | Error, req: FastifyRequest, reply: FastifyReply) {

@@ -14,6 +14,8 @@ export const KNOWN_ERROR_CODES = [
   'NOT_REGISTERED', 'UNAUTHENTICATED', 'FORBIDDEN', 'NOT_FOUND', 'ROLE_REQUIRED', 'VALIDATION_FAILED', 'HANDLE_TAKEN',
   'UNDER_MINIMUM_AGE', 'ALREADY_REGISTERED', 'ACCOUNT_INACTIVE', 'BLOCKED', 'COMMENTS_OFF', 'FOLLOWERS_ONLY', 'SELF_FOLLOW',
   'RATE_LIMITED', 'NETWORK_ERROR', 'UPLOAD_FAILED', 'INTERNAL', 'VIDEO_REQUIRED', 'NOT_REMOVED_FOR_COPYRIGHT', 'ALREADY_PENDING',
+  'BILLING_NOT_CONFIGURED', 'ALREADY_SUBSCRIBED', 'CONTACT_SALES', 'PLAN_NOT_PURCHASABLE', 'PRICE_NOT_AVAILABLE', 'COUPON_INVALID',
+  'COUPON_NOT_AVAILABLE', 'NO_BILLING_ACCOUNT', 'QUOTA_SCOUT_SEARCHES', 'QUOTA_SHORTLIST_SLOTS', 'QUOTA_ACTIVE_VIDEOS', 'QUOTA_DAILY_UPLOADS',
 ] as const;
 export type KnownErrorCode = (typeof KNOWN_ERROR_CODES)[number];
 
@@ -39,6 +41,8 @@ export class ApiError extends Error {
   get isAuth(): boolean { return this.status === 401 || this.code === 'UNAUTHENTICATED'; }
   get isForbidden(): boolean { return this.status === 403; }
   get isNetwork(): boolean { return this.code === 'NETWORK_ERROR'; }
+  /** The API has no payment provider configured yet (503 BILLING_NOT_CONFIGURED). */
+  get isBillingOff(): boolean { return this.code === 'BILLING_NOT_CONFIGURED'; }
 }
 
 export const isApiError = (e: unknown): e is ApiError => e instanceof ApiError;
@@ -195,6 +199,13 @@ export function createApiClient(opts: ApiClientOptions = {}) {
     // copyright
     copyrightTakedown: (b: T.CopyrightTakedownRequest) => send<T.CopyrightTakedownResponse>('POST', '/v1/copyright/takedowns', b),
     counterNotice: (videoId: string, b: T.CounterNoticeRequest) => send<void>('POST', `/v1/videos/${e(videoId)}/counter-notice`, b),
+
+    // plans and billing
+    plans: (q?: { currency?: string }, s?: AbortSignal) => get<T.PlanList>('/v1/plans', q, s),
+    entitlements: (s?: AbortSignal) => get<T.EntitlementsView>('/v1/me/entitlements', undefined, s),
+    checkout: (b: T.CheckoutRequest) => send<T.CheckoutResponse>('POST', '/v1/billing/checkout', b),
+    billingPortal: () => send<T.PortalResponse>('POST', '/v1/billing/portal'),
+    validateCoupon: (b: T.CouponValidateRequest) => send<T.CouponView>('POST', '/v1/billing/coupons/validate', b),
 
     // notifications
     notifications: (q?: { cursor?: string }, s?: AbortSignal) => get<T.NotificationPage>('/v1/notifications', q, s),

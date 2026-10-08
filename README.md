@@ -24,13 +24,16 @@ English first, Arabic (RTL) ready.
 | Copyright and legal | Ownership declaration on every upload; public takedown form that opens a priority moderation case; counter-notice by the uploader or guardian; repeat-infringer count shown to admins; draft Terms, Privacy (incl. cookies), Community Guidelines, Copyright, Safety, Scout and Subscription terms, all marked "draft pending legal review" | API + web tests |
 | Admin | Moderation queue (AI flags, rule hits, merged user reports) with approve / reject / remove / restrict / escalate / suspend, verification decisions, user suspend/restore, challenges, jurisdiction rules, stats, append-only audit log | API tests |
 | Web app | Next.js app in the KICKSCOUT design: landing page, feed, upload flow, profiles, Discover, Talent Radar, challenges, search, scout dashboard, notifications, settings, admin | See `apps/web` |
+| Plans and billing | Plans, prices (per currency, minor units), trials and limits live in the database; one entitlements module turns a user's plans into FEATURE_* flags and limits (clip length, live videos, uploads per day, scout searches per month, shortlist slots, seats); quotas enforced on uploads, scout search and shortlists; Stripe Checkout + Billing Portal behind a `PaymentProvider` interface (test mode only); signed, idempotent webhooks are the only thing that grants a paid plan; coupons and referral codes; minors cannot buy (a guardian buys for them); `/pricing` page and a Billing section in Settings | API + domain + web tests (Stripe itself is faked; no live Stripe call made yet) |
 | Demo content | Labelled demo players, scout and challenges using the 20 promo clips, refused in production | API test |
 
 ### Not built yet (and labelled as such in the product)
 
 - Natural-language search, personalised recommendations (For You is newest-first today), scout
-  comparison, direct messaging, Apple sign-in, paid plans: these return
-  **Coming Soon** capability labels.
+  comparison, direct messaging, Apple sign-in: these return **Coming Soon** capability labels.
+- Paid plans are a **Prototype**: payments stay off until Stripe test keys are set, and the API
+  refuses live keys. Pro analytics, team seat management, priority support and API access are
+  listed on plans as **Coming soon**; seats are an entitlement number only (no member invites yet).
 - Malware scanning of uploads (files are fully decoded by ffmpeg, which rejects non-video files).
 - Production email for guardian invitations (`MAILER=log` prints the link; production refuses to
   start with it).
@@ -174,6 +177,42 @@ function limit. Set `RATE_LIMIT_STORE=postgres` there so limits hold across func
 Deploy order: database → run migrations → API → worker → web. Everything can be deployed
 incrementally.
 
+### Payments (Stripe, test mode)
+
+Plans and prices are rows in `plans` and `plan_prices` (seeded by `db/migrations/0006_billing.sql`:
+Player Free, Player Pro $4.99/mo or $49/yr with a 7-day trial, Scout Free with 20 searches a month
+and 10 shortlist slots, Scout Pro $29/mo or $249/yr with a 14-day trial, Organization $99/mo for
+teams of 3 to 5 with a 14-day trial, Club Pro $249/mo, Enterprise by contact). Change a price or a
+limit with SQL; no deploy is needed. Another currency is another `plan_prices` row. Checkout sends
+the row's amount inline, or uses a Stripe Price when `provider_price_id` is set. A free trial is
+offered once per plan audience.
+
+| Variable | Where | Purpose |
+| --- | --- | --- |
+| `STRIPE_SECRET_KEY` | API | Stripe **test-mode** secret key (`sk_test_…` or restricted `rk_test_…`). Live keys are refused at startup. |
+| `STRIPE_WEBHOOK_SECRET` | API | Signing secret (`whsec_…`) of the webhook endpoint. Required together with the key. |
+| `WEB_APP_URL` | API | Public web URL; checkout returns to `/settings?checkout=success#billing` or `/pricing?checkout=cancelled`. |
+| `NEXT_PUBLIC_SALES_EMAIL` | Web | Optional address for the Enterprise "Contact sales" button. |
+
+Without the two Stripe variables the API runs normally and `POST /v1/billing/checkout`,
+`/v1/billing/portal` and `/v1/billing/webhook` answer `503 BILLING_NOT_CONFIGURED`; the web app
+then says "Payments are not enabled yet". To turn payments on in test mode:
+
+1. In the Stripe Dashboard (test mode) copy the secret key, and add a webhook endpoint
+   `https://<api>/v1/billing/webhook` for `checkout.session.completed`,
+   `customer.subscription.created`, `customer.subscription.updated`,
+   `customer.subscription.deleted` and `invoice.payment_failed`; copy its signing secret.
+2. Configure the Customer Portal (Settings > Billing > Customer portal): allow cancellation and
+   payment-method updates. That is the one-click "Manage or cancel" button in Settings.
+3. Set the variables above and redeploy the API. `GET /v1/plans` then reports `paymentsEnabled: true`.
+
+A paid plan is granted only when a signature-verified webhook writes the `subscriptions` row; the
+redirect back from Checkout grants nothing. Webhook events are recorded by id in `billing_events`
+in the same transaction as their effects, so retries and replays apply once. Coupons and referral
+codes live in `coupons`; each needs the matching Stripe promotion code id
+(`provider_promotion_code_id`) to be usable at checkout, or people can type a Stripe promotion code
+on the Checkout page itself.
+
 ## Security
 
 - Every protected route calls the server-side policy; roles come from the database, never the
@@ -199,6 +238,7 @@ or child safety is priority 0.
 - **Phase 1 (core)** and **Phase 2 (talent)**: built as described above.
 - **Phase 3 (intelligence)**: natural-language search to structured filters, personalised
   recommendations with user controls, scout comparison, analytics dashboards.
-- **Phase 4 (scale)**: PWA / mobile app, organisations and clubs, paid scout plans.
+- **Phase 4 (scale)**: PWA / mobile app, organisations and clubs (seat invites), live payments
+  after legal review of the subscription terms.
 
 Design notes: [docs/adr/0001-architecture.md](docs/adr/0001-architecture.md).

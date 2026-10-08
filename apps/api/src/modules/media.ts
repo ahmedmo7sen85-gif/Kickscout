@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { sql } from 'kysely';
 import { CreateUploadRequest, CreateUploadResponse, TagCorrectionRequest, UpdateVideoRequest, VideoPage, VideoView, CursorQuery } from '@fp/contracts';
 import { isMinor } from '@fp/domain';
-import type { Actor } from '@fp/domain';
+import type { Actor, Limits } from '@fp/domain';
 import type { Database, DB } from '@fp/db';
 import type { Transaction } from 'kysely';
 import type { FastifyBaseLogger } from 'fastify';
@@ -15,6 +15,7 @@ import { mediaUrl } from '../platform/storage.js';
 import { audit, emit, enqueue } from '../platform/events.js';
 import { canSeeInternals, relationTo } from './views.js';
 import { decodeCursor, encodeCursor } from '../platform/cursor.js';
+import { entitlementsFor, uploadUsage } from '../platform/entitlements.js';
 
 const EXTENSIONS: Record<string, string> = { 'video/mp4': 'mp4', 'video/quicktime': 'mov', 'video/webm': 'webm' };
 
@@ -200,23 +201,19 @@ async function viewOf(deps: Deps, viewer: Actor, videoId: string) {
   return (await toVideoViews(deps, viewer, [row]))[0]!;
 }
 
-/** Caps how many live videos a player keeps and how many uploads they start per day, to bound storage and processing cost. */
-export async function checkUploadQuota(deps: Deps, userId: string): Promise<void> {
-  const { MAX_ACTIVE_VIDEOS, MAX_UPLOADS_PER_DAY } = deps.config;
-  const since = new Date(deps.now().getTime() - 24 * 60 * 60 * 1000);
-  const row = await deps.db
-    .selectFrom('videos')
-    .select([
-      sql<number>`count(*) filter (where status not in ('deleted', 'rejected', 'failed'))::int`.as('active'),
-      sql<number>`count(*) filter (where created_at >= ${since})::int`.as('today'),
-    ])
-    .where('owner_user_id', '=', userId)
-    .executeTakeFirstOrThrow();
-  if (row.active >= MAX_ACTIVE_VIDEOS) {
-    throw new ApiError(403, 'QUOTA_ACTIVE_VIDEOS', `you already have ${MAX_ACTIVE_VIDEOS} videos; delete one to upload another`);
+/**
+ * Caps how many live videos a player keeps and how many uploads they start per day, to bound storage
+ * and processing cost. The numbers come from the player's plan (see platform/entitlements.ts); the
+ * configured MAX_* values are the free-plan defaults.
+ */
+export async function checkUploadQuota(deps: Deps, userId: string, limits: Pick<Limits, 'maxActiveVideos' | 'maxUploadsPerDay'>): Promise<void> {
+  const { maxActiveVideos, maxUploadsPerDay } = limits;
+  const row = await uploadUsage(deps, userId);
+  if (row.active >= maxActiveVideos) {
+    throw new ApiError(403, 'QUOTA_ACTIVE_VIDEOS', `you already have ${maxActiveVideos} videos; delete one to upload another`);
   }
-  if (row.today >= MAX_UPLOADS_PER_DAY) {
-    throw new ApiError(429, 'QUOTA_DAILY_UPLOADS', `you can start ${MAX_UPLOADS_PER_DAY} uploads per day; try again tomorrow`);
+  if (row.today >= maxUploadsPerDay) {
+    throw new ApiError(429, 'QUOTA_DAILY_UPLOADS', `you can start ${maxUploadsPerDay} uploads per day; try again tomorrow`);
   }
 }
 
@@ -247,7 +244,8 @@ export const mediaRoutes = [
         const now = ctx.deps.now();
         if (!ch || ch.starts_at > now || ch.ends_at < now) throw new ApiError(400, 'CHALLENGE_NOT_OPEN', 'this challenge is not open');
       }
-      await checkUploadQuota(ctx.deps, me.userId);
+      const { limits } = await entitlementsFor(ctx.deps, me.userId, me.roles);
+      await checkUploadQuota(ctx.deps, me.userId, limits);
       const videoId = newId();
       const key = `originals/${me.userId}/${videoId}.${EXTENSIONS[b.contentType]}`;
       const upload = await ctx.deps.storage.presignPut(key, b.contentType, b.sizeBytes);
@@ -269,7 +267,8 @@ export const mediaRoutes = [
           region_id: region?.region_id ?? null,
           trim_start_ms: b.trimStartMs ?? null,
           trim_end_ms: b.trimEndMs ?? null,
-          max_duration_ms: ctx.deps.config.MAX_VIDEO_SECONDS * 1000,
+          // The worker enforces the clip length the uploader's plan allowed when the upload started.
+          max_duration_ms: limits.maxVideoSeconds * 1000,
           rights_confirmed_at: ctx.deps.now(),
         }).execute();
         await replaceHashtags(tx, videoId, b.hashtags);

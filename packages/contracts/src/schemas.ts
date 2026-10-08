@@ -519,3 +519,106 @@ export const JurisdictionRuleRequest = z.object({
   legallyReviewed: z.boolean(),
   source: z.string().max(500).optional(),
 });
+
+// ---------------------------------------------------------------- plans, entitlements, billing
+export const Currency = z.string().regex(/^[A-Z]{3}$/, 'ISO 4217 code, e.g. USD');
+export const BillingInterval = z.enum(['month', 'year']);
+export const PlanAudience = z.enum(['player', 'scout', 'organization']);
+export const PlanKey = z.string().regex(/^[a-z][a-z0-9_]{1,40}$/);
+export const PlanLimits = z.object({
+  maxVideoSeconds: z.number().int(),
+  maxActiveVideos: z.number().int(),
+  maxUploadsPerDay: z.number().int(),
+  /** null: unlimited. */
+  scoutSearchesPerMonth: z.number().int().nullable(),
+  shortlistSlots: z.number().int().nullable(),
+  seats: z.number().int(),
+});
+/** Prices are in minor units (cents for USD), exactly what the payment provider will charge. */
+export const PlanPrice = z.object({ currency: Currency, interval: BillingInterval, amountMinor: z.number().int() });
+export const PlanFeature = z.object({ key: z.string(), status: z.enum(['live', 'coming_soon']) });
+export const PlanView = z.object({
+  key: PlanKey,
+  audience: PlanAudience,
+  tier: z.enum(['free', 'pro', 'organization', 'club', 'enterprise']),
+  name: Bilingual,
+  description: Bilingual,
+  /** none: free; self_serve: Checkout; contact_sales: no checkout. */
+  checkout: z.enum(['none', 'self_serve', 'contact_sales']),
+  trialDays: z.number().int(),
+  prices: z.array(PlanPrice),
+  features: z.array(PlanFeature),
+  limits: PlanLimits,
+});
+export const PlansQuery = z.object({ currency: Currency.default('USD') });
+export const PlanList = z.object({
+  currency: Currency,
+  /** False until the payment provider is configured; checkout then answers 503 BILLING_NOT_CONFIGURED. */
+  paymentsEnabled: z.boolean(),
+  items: z.array(PlanView),
+});
+
+export const SubscriptionView = z.object({
+  planKey: PlanKey,
+  planName: Bilingual,
+  status: z.enum(['incomplete', 'incomplete_expired', 'trialing', 'active', 'past_due', 'canceled', 'unpaid', 'paused']),
+  interval: BillingInterval.nullable(),
+  currency: Currency.nullable(),
+  amountMinor: z.number().int().nullable(),
+  trialEnd: z.iso.datetime().nullable(),
+  currentPeriodEnd: z.iso.datetime().nullable(),
+  cancelAtPeriodEnd: z.boolean(),
+  /** True when the plan is in effect now. */
+  grantsAccess: z.boolean(),
+  /** Paid by someone else (a guardian). */
+  paidByOther: z.boolean(),
+});
+export const EntitlementsView = z.object({
+  plans: z.array(PlanKey),
+  features: z.array(z.string()),
+  limits: PlanLimits,
+  usage: z.object({
+    activeVideos: z.number().int(),
+    uploadsToday: z.number().int(),
+    scoutSearchesThisMonth: z.number().int(),
+    shortlistSlotsUsed: z.number().int(),
+    /** When the monthly search quota starts again. */
+    searchesResetAt: z.iso.datetime(),
+  }),
+  subscriptions: z.array(SubscriptionView),
+  /** The caller has a billing account with the provider, so the billing portal can open. */
+  hasBillingAccount: z.boolean(),
+  paymentsEnabled: z.boolean(),
+});
+
+export const CouponCode = z.string().trim().regex(/^[a-zA-Z0-9_-]{3,40}$/, 'letters, digits, _ and - (3 to 40)');
+export const CheckoutRequest = z.object({
+  planKey: PlanKey,
+  interval: BillingInterval,
+  currency: Currency.default('USD'),
+  couponCode: CouponCode.optional(),
+  /** A guardian buying for their ward. Omit to buy for yourself. */
+  forUserId: Id.optional(),
+});
+export const CheckoutResponse = z.object({
+  /** The payment provider's hosted checkout page. Nothing is granted until the provider confirms payment. */
+  url: z.url(),
+  sessionId: z.string(),
+  planKey: PlanKey,
+  interval: BillingInterval,
+  currency: Currency,
+  amountMinor: z.number().int(),
+  trialDays: z.number().int(),
+});
+export const PortalResponse = z.object({ url: z.url() });
+export const CouponValidateRequest = z.object({ code: CouponCode, planKey: PlanKey, currency: Currency.default('USD') });
+export const CouponView = z.object({
+  code: z.string(),
+  kind: z.enum(['coupon', 'referral']),
+  percentOff: z.number().int().nullable(),
+  amountOffMinor: z.number().int().nullable(),
+  currency: Currency.nullable(),
+  duration: z.enum(['once', 'repeating', 'forever']),
+  durationMonths: z.number().int().nullable(),
+});
+export const WebhookAck = z.object({ received: z.literal(true), duplicate: z.boolean() });
