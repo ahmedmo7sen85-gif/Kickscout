@@ -14,6 +14,7 @@ import { forbidden, notFound } from '../platform/errors.js';
 import { audit, emit, notify } from '../platform/events.js';
 import { ageBandOf, currentConsents } from '../platform/actor.js';
 import { decrypt } from '../platform/crypto.js';
+import { removeFromOrganizations } from './orgs.js';
 
 const Uuid = z.uuid();
 
@@ -85,6 +86,9 @@ async function deleteAccount(tx: Transaction<DB>, subjectId: string, actorId: st
   await tx.deleteFrom('shortlist_players').where('player_id', '=', subjectId).execute();
   await tx.deleteFrom('scout_notes').where((eb) => eb.or([eb('player_id', '=', subjectId), eb('scout_id', '=', subjectId)])).execute();
   await tx.deleteFrom('shortlists').where('owner_id', '=', subjectId).execute();
+  // Organizations and pipelines: leave every organization (ownership passes on), and drop the person's
+  // own pipeline, saved searches and every pipeline card about them.
+  await removeFromOrganizations(tx, subjectId, now);
   await tx.updateTable('contact_requests').set({ status: 'declined', responded_at: now })
     .where((eb) => eb.or([eb('scout_id', '=', subjectId), eb('player_id', '=', subjectId)])).where('status', '=', 'pending').execute();
   await tx.updateTable('guardian_relationships').set({ status: 'revoked' })

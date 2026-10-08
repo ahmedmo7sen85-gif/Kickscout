@@ -13,11 +13,12 @@ import { newId } from '../platform/ids.js';
 import { audit, emit, notify } from '../platform/events.js';
 import { toVideoViews, videoQuery } from './media.js';
 import { challengeViews } from './challenges.js';
+import { runSavedSearchAlerts } from '@fp/worker/alerts';
 
 /** Opens a moderation case, or merges into the open case for the same target. */
 export async function openCase(
   tx: Transaction<DB>,
-  c: { targetKind: 'video' | 'comment' | 'user'; targetId: string; source: 'ai' | 'rules' | 'report' | 'appeal' | 'copyright'; categories: string[]; priority: number; reports?: number; aiVerdict?: unknown },
+  c: { targetKind: 'video' | 'comment' | 'user' | 'organization'; targetId: string; source: 'ai' | 'rules' | 'report' | 'appeal' | 'copyright'; categories: string[]; priority: number; reports?: number; aiVerdict?: unknown },
 ) {
   await tx.insertInto('moderation_cases').values({
     id: newId(), target_kind: c.targetKind, target_id: c.targetId, source: c.source, categories: c.categories, priority: c.priority,
@@ -123,13 +124,16 @@ export const moderationRoutes = [
         .orderBy('priority').orderBy('created_at').limit(ctx.query.limit).execute();
       const videoIds = cases.filter((c) => c.target_kind === 'video').map((c) => c.target_id);
       const commentIds = cases.filter((c) => c.target_kind === 'comment').map((c) => c.target_id);
-      const [videoRows, comments] = await Promise.all([
+      const orgIds = cases.filter((c) => c.target_kind === 'organization').map((c) => c.target_id);
+      const [videoRows, comments, orgs] = await Promise.all([
         videoIds.length ? videoQuery(ctx.deps.db).where('videos.id', 'in', videoIds).execute() : Promise.resolve([]),
         commentIds.length
           ? ctx.deps.db.selectFrom('comments').innerJoin('profiles', 'profiles.user_id', 'comments.author_id')
             .select(['comments.id', 'comments.body', 'profiles.handle']).where('comments.id', 'in', commentIds).execute()
           : Promise.resolve([]),
+        orgIds.length ? ctx.deps.db.selectFrom('organizations').select(['id', 'name', 'type', 'verified_at', 'status']).where('id', 'in', orgIds).execute() : Promise.resolve([]),
       ]);
+      const orgMap = new Map(orgs.map((o) => [o.id, { id: o.id, name: o.name, type: o.type, verified: o.verified_at !== null, status: o.status }]));
       const videos = new Map((await toVideoViews(ctx.deps, me, videoRows)).map((v) => [v.id, v]));
       const commentMap = new Map(comments.map((c) => [c.id, c]));
       const copyright = await copyrightContext(ctx.deps.db, cases);
@@ -140,6 +144,7 @@ export const moderationRoutes = [
           decision: c.decision, createdAt: c.created_at.toISOString(),
           video: videos.get(c.target_id) ?? null,
           comment: commentMap.has(c.target_id) ? { id: c.target_id, body: commentMap.get(c.target_id)!.body, authorHandle: commentMap.get(c.target_id)!.handle } : null,
+          organization: c.target_kind === 'organization' ? (orgMap.get(c.target_id) ?? null) : null,
           copyrightClaims: copyright.claims.get(c.target_id) ?? [],
           counterNotice: copyright.notices.get(c.target_id) ?? null,
           ownerCopyrightStrikes: copyright.strikesFor(c.target_kind, c.target_id),
@@ -154,6 +159,7 @@ export const moderationRoutes = [
       ctx.authorize({ kind: 'moderation.act' });
       const me = ctx.me();
       const { decision, note } = ctx.body;
+      let published: string | null = null;
       await ctx.deps.db.transaction().execute(async (tx) => {
         const c = await tx.selectFrom('moderation_cases').selectAll().where('id', '=', z.uuid().parse(ctx.params.caseId)).forUpdate().executeTakeFirst();
         if (!c) throw notFound('case');
@@ -165,7 +171,7 @@ export const moderationRoutes = [
           await audit(tx, { actorId: me.userId, action: 'moderation.escalate', targetKind: c.target_kind, targetId: c.target_id, metadata: { caseId: c.id, note: note ?? null } });
           return;
         }
-        if (decision === 'suspend') {
+        if (decision === 'suspend' && c.target_kind !== 'organization') {
           const ownerId = c.target_kind === 'user' ? c.target_id
             : c.target_kind === 'video' ? (await tx.selectFrom('videos').select('owner_user_id').where('id', '=', c.target_id).executeTakeFirst())?.owner_user_id
             : (await tx.selectFrom('comments').select('author_id').where('id', '=', c.target_id).executeTakeFirst())?.author_id;
@@ -181,6 +187,7 @@ export const moderationRoutes = [
               if (!v.playback_key) throw new ApiError(409, 'NOT_PROCESSED', 'this video has not finished processing');
               await tx.updateTable('videos').set({ status: 'published', moderation: 'safe', status_reason: null, published_at: now }).where('id', '=', v.id).execute();
               await notify(tx, v.owner_user_id, 'video.published', { videoId: v.id });
+              published = v.id;
             } else if (decision === 'restrict') {
               await tx.updateTable('videos').set({ visibility: 'private' }).where('id', '=', v.id).execute();
               await notify(tx, v.owner_user_id, 'video.restricted', { videoId: v.id });
@@ -196,6 +203,14 @@ export const moderationRoutes = [
         if (c.target_kind === 'user' && (decision === 'restrict' || decision === 'remove' || decision === 'reject')) {
           await tx.updateTable('users').set({ status: 'suspended' }).where('id', '=', c.target_id).where('status', '=', 'active').execute();
         }
+        // An organization found to be fake or abusive is hidden from the public and its pipeline frozen; approve restores it.
+        if (c.target_kind === 'organization' && decision !== 'dismiss') {
+          const suspend = decision !== 'approve';
+          const org = await tx.updateTable('organizations').set({ status: suspend ? 'suspended' : 'active', updated_at: now })
+            .where('id', '=', c.target_id).where('status', '!=', 'deleted').returning('id').executeTakeFirst();
+          const owner = org && await tx.selectFrom('organization_members').select('user_id').where('organization_id', '=', c.target_id).where('role', '=', 'owner').executeTakeFirst();
+          if (owner && suspend) await notify(tx, owner.user_id, 'org.suspended', { organizationId: c.target_id });
+        }
         if (c.target_kind === 'video') await settleCopyright(tx, c.target_id, decision, now);
         await tx.updateTable('moderation_cases').set({
           status: decision === 'dismiss' ? 'dismissed' : 'actioned', decision, decided_by: me.userId, decision_note: note ?? null, decided_at: now,
@@ -204,6 +219,11 @@ export const moderationRoutes = [
           .where('target_kind', '=', c.target_kind).where('target_id', '=', c.target_id).where('status', '=', 'open').execute();
         await audit(tx, { actorId: me.userId, action: `moderation.${decision}`, targetKind: c.target_kind, targetId: c.target_id, metadata: { caseId: c.id, note: note ?? null } });
       });
+      // Saved-search alerts for the newly published clip, once it is committed. Best effort: the
+      // worker's maintenance run catches up if this fails.
+      if (published) {
+        await runSavedSearchAlerts(ctx.deps.db, { videoIds: [published] }).catch((err: Error) => ctx.req.log.warn({ err }, 'saved-search alerts failed'));
+      }
     },
   ),
 
@@ -227,17 +247,22 @@ export const moderationRoutes = [
   ),
 
   route(
-    { method: 'get', path: '/v1/admin/verification-requests', summary: 'Pending verification requests', tag: 'admin', auth: 'user', response: VerificationRequestList },
+    { method: 'get', path: '/v1/admin/verification-requests', summary: 'Pending verification requests of every type (identity, player, scout, organization)', tag: 'admin', auth: 'user', response: VerificationRequestList },
     async (ctx) => {
       ctx.authorize({ kind: 'verification.decide' });
       const rows = await ctx.deps.db.selectFrom('verification_requests').innerJoin('profiles', 'profiles.user_id', 'verification_requests.user_id')
         .select(['verification_requests.id', 'verification_requests.user_id', 'verification_requests.kind', 'verification_requests.status',
-          'verification_requests.organization', 'verification_requests.evidence', 'verification_requests.created_at', 'profiles.handle', 'profiles.display_name'])
+          'verification_requests.organization', 'verification_requests.evidence', 'verification_requests.created_at', 'profiles.handle', 'profiles.display_name',
+          'verification_requests.organization_id'])
         .where('verification_requests.status', '=', 'pending').orderBy('verification_requests.created_at').limit(100).execute();
+      const orgIds = rows.flatMap((r) => (r.organization_id ? [r.organization_id] : []));
+      const orgs = orgIds.length ? await ctx.deps.db.selectFrom('organizations').select(['id', 'name', 'type', 'country_code']).where('id', 'in', orgIds).execute() : [];
+      const orgMap = new Map(orgs.map((o) => [o.id, { id: o.id, name: o.name, type: o.type, country: o.country_code }]));
       return {
         items: rows.map((r) => ({
           id: r.id, user: { userId: r.user_id, handle: r.handle, displayName: r.display_name }, kind: r.kind as never, status: r.status as never,
           organization: r.organization, evidence: r.evidence, createdAt: r.created_at.toISOString(),
+          targetOrganization: r.organization_id ? (orgMap.get(r.organization_id) ?? null) : null,
         })),
       };
     },
@@ -254,15 +279,21 @@ export const moderationRoutes = [
         if (r.status !== 'pending') throw conflict('ALREADY_DECIDED', 'this request is already decided');
         const now = ctx.deps.now();
         await tx.updateTable('verification_requests').set({ status: ctx.body.approve ? 'approved' : 'rejected', decided_by: me.userId, decided_at: now }).where('id', '=', r.id).execute();
-        if (ctx.body.approve) {
+        if (ctx.body.approve && r.kind === 'organization') {
+          // The badge goes on the organization, not on the person who asked.
+          await tx.updateTable('organizations').set({ verified_at: now, updated_at: now }).where('id', '=', r.organization_id!).execute();
+        } else if (ctx.body.approve) {
           await tx.updateTable('profiles').set({ verified_at: now }).where('user_id', '=', r.user_id).execute();
           if (r.kind === 'scout') {
             await tx.insertInto('user_roles').values({ user_id: r.user_id, role: 'scout', granted_by: me.userId })
               .onConflict((oc) => oc.columns(['user_id', 'role']).doNothing()).execute();
           }
         }
-        await notify(tx, r.user_id, ctx.body.approve ? 'verification.approved' : 'verification.rejected', { kind: r.kind });
-        await audit(tx, { actorId: me.userId, action: ctx.body.approve ? 'verification.approved' : 'verification.rejected', targetKind: 'user', targetId: r.user_id, metadata: { kind: r.kind, requestId: r.id } });
+        await notify(tx, r.user_id, ctx.body.approve ? 'verification.approved' : 'verification.rejected', { kind: r.kind, ...(r.organization_id ? { organizationId: r.organization_id } : {}) });
+        await audit(tx, {
+          actorId: me.userId, action: ctx.body.approve ? 'verification.approved' : 'verification.rejected',
+          targetKind: r.organization_id ? 'organization' : 'user', targetId: r.organization_id ?? r.user_id, metadata: { kind: r.kind, requestId: r.id, userId: r.user_id },
+        });
       });
     },
   ),

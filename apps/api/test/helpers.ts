@@ -32,6 +32,10 @@ export class RecordingMailer implements Mailer {
   async sendGuardianInvitation(to: string, _name: string, token: string) {
     this.invitations.push({ to, token });
   }
+  readonly orgInvitations: { to: string; organization: string; role: string; token: string }[] = [];
+  async sendOrganizationInvitation(to: string, organization: string, role: string, token: string) {
+    this.orgInvitations.push({ to, organization, role, token });
+  }
 }
 
 export interface TestEnv {

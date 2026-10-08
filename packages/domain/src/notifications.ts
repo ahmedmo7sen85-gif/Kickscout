@@ -29,6 +29,8 @@ export function notificationCategory(kind: string): NotificationCategory | 'secu
   if (kind.startsWith('challenge.')) return 'challenge';
   if (kind.startsWith('contact.')) return 'scout_contact';
   if (kind.startsWith('shortlist.')) return 'shortlist_activity';
+  // Saved-search alerts and organization pipeline activity are scouting activity too.
+  if (kind.startsWith('saved_search.') || kind.startsWith('crm.')) return 'shortlist_activity';
   if (kind.startsWith('verification.')) return 'verification';
   if (kind.startsWith('announcement.')) return 'announcements';
   return 'security';

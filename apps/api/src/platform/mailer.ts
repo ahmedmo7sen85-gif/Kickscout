@@ -2,6 +2,7 @@ import type { FastifyBaseLogger } from 'fastify';
 
 export interface Mailer {
   sendGuardianInvitation(to: string, minorDisplayName: string, acceptToken: string, locale: 'en' | 'ar'): Promise<void>;
+  sendOrganizationInvitation(to: string, organizationName: string, role: string, acceptToken: string, locale: 'en' | 'ar'): Promise<void>;
 }
 
 /**
@@ -13,5 +14,9 @@ export class LogMailer implements Mailer {
 
   async sendGuardianInvitation(to: string, minorDisplayName: string, acceptToken: string, locale: 'en' | 'ar') {
     this.log.info({ mail: 'guardian_invitation', to, minorDisplayName, acceptToken, locale }, 'DEV MAILER: email not sent');
+  }
+
+  async sendOrganizationInvitation(to: string, organizationName: string, role: string, acceptToken: string, locale: 'en' | 'ar') {
+    this.log.info({ mail: 'organization_invitation', to, organizationName, role, acceptToken, locale }, 'DEV MAILER: email not sent');
   }
 }

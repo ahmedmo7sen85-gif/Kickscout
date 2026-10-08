@@ -227,9 +227,9 @@ export const CommentPage = z.object({ items: z.array(CommentView), nextCursor: z
 
 export const ReportReason = z.enum(['spam', 'harassment', 'hate', 'sexual', 'violence', 'dangerous', 'child_safety',
   'impersonation', 'copyright', 'stolen_video', 'scam', 'not_football', 'fake_scout', 'inappropriate_contact', 'other']);
-/** Scouts are reported as users. 'organization' is reserved in the database for organisation profiles (not built yet). */
+/** Scouts are reported as users; clubs, academies and agencies as organizations. */
 export const ReportRequest = z.object({
-  targetKind: z.enum(['video', 'comment', 'user']),
+  targetKind: z.enum(['video', 'comment', 'user', 'organization']),
   targetId: Id,
   reason: ReportReason,
   details: z.string().max(1000).optional(),
@@ -353,17 +353,24 @@ export const ContactRequestView = z.object({
 export const ContactRequestList = z.object({ items: z.array(ContactRequestView) });
 export const ContactResponseRequest = z.object({ accept: z.boolean() });
 
+/** identity: the person is who they say; organization: an organization on KICKSCOUT is real (asked by its owner or an admin). */
+export const VerificationKind = z.enum(['identity', 'player', 'scout', 'organization']);
 export const VerificationRequestCreate = z.object({
-  kind: z.enum(['player', 'scout']),
+  kind: VerificationKind,
+  /** The club, academy or agency a scout works for (free text). */
   organization: z.string().trim().min(2).max(120).optional(),
+  /** Required for kind 'organization': the organization to verify. */
+  organizationId: Id.optional(),
   evidence: z.string().trim().min(10).max(1000),
 });
 export const VerificationRequestView = z.object({
   id: Id,
   user: z.object({ userId: Id, handle: z.string(), displayName: z.string() }),
-  kind: z.enum(['player', 'scout']),
+  kind: VerificationKind,
   status: z.enum(['pending', 'approved', 'rejected']),
   organization: z.string().nullable(),
+  /** For kind 'organization': the organization being verified. */
+  targetOrganization: z.object({ id: Id, name: z.string(), type: z.string(), country: z.string().nullable() }).nullable().default(null),
   evidence: z.string().nullable(),
   createdAt: z.iso.datetime(),
 });
@@ -489,6 +496,8 @@ export const ModerationCaseView = z.object({
   createdAt: z.iso.datetime(),
   video: VideoView.nullable(),
   comment: z.object({ id: Id, body: z.string(), authorHandle: z.string() }).nullable(),
+  /** For reports about an organization. */
+  organization: z.object({ id: Id, name: z.string(), type: z.string(), verified: z.boolean(), status: z.string() }).nullable().default(null),
   /** Takedown claims on the target video, newest first. Claimant contact details are for staff only. */
   copyrightClaims: z.array(CopyrightClaimView),
   counterNotice: CounterNoticeView.nullable(),
@@ -519,3 +528,116 @@ export const JurisdictionRuleRequest = z.object({
   legallyReviewed: z.boolean(),
   source: z.string().max(500).optional(),
 });
+
+// ---------------------------------------------------------------- organizations (phase D)
+export const OrgType = z.enum(['academy', 'club', 'agency', 'school', 'other']);
+export const OrgRole = z.enum(['owner', 'admin', 'scout', 'analyst', 'viewer']);
+/** Ownership is never granted by invitation or role change, only by transfer. */
+export const InvitableOrgRole = z.enum(['admin', 'scout', 'analyst', 'viewer']);
+export const CountryCode = z.string().regex(/^[A-Z]{2}$/);
+/** Logo object keys live under the organization's own prefix. Uploading logos is not built yet. */
+export const OrgLogoKey = z.string().regex(/^org-logos\/[0-9a-f-]{36}\/[a-z0-9_-]{1,64}\.(?:png|jpg|jpeg|webp)$/);
+
+export const CreateOrganizationRequest = z.object({
+  name: z.string().trim().min(2).max(120),
+  type: OrgType,
+  countryCode: CountryCode.optional(),
+});
+export const UpdateOrganizationRequest = z.object({
+  name: z.string().trim().min(2).max(120).optional(),
+  type: OrgType.optional(),
+  countryCode: CountryCode.nullable().optional(),
+  logoKey: OrgLogoKey.nullable().optional(),
+});
+/** What anyone may see. Members are never listed publicly. */
+export const OrganizationPublicView = z.object({
+  id: Id,
+  name: z.string(),
+  type: OrgType,
+  country: z.string().nullable(),
+  verified: z.boolean(),
+  logoKey: z.string().nullable(),
+  logoUrl: z.string().nullable(),
+  /** The caller's role, when they are a member. */
+  myRole: OrgRole.nullable(),
+});
+export const OrganizationMemberView = z.object({
+  userId: Id, handle: z.string(), displayName: z.string(), role: OrgRole, since: z.iso.datetime(),
+});
+export const OrganizationInvitationView = z.object({
+  id: Id, email: z.string(), role: InvitableOrgRole, status: z.enum(['pending', 'accepted', 'declined', 'revoked', 'expired']),
+  expiresAt: z.iso.datetime(), createdAt: z.iso.datetime(),
+});
+export const OrganizationDashboard = OrganizationPublicView.extend({
+  myRole: OrgRole,
+  /** 'suspended': hidden from the public by a moderation decision; the pipeline is read-only meanwhile. */
+  status: z.enum(['active', 'suspended']),
+  members: z.array(OrganizationMemberView),
+  /** Pending invitations; empty unless the caller is an admin or the owner. */
+  invitations: z.array(OrganizationInvitationView),
+  verification: z.object({ status: z.enum(['none', 'pending', 'approved', 'rejected']), requestedAt: z.iso.datetime().nullable() }),
+  createdAt: z.iso.datetime(),
+});
+export const MyOrganizations = z.object({ items: z.array(OrganizationPublicView.extend({ myRole: OrgRole, suspended: z.boolean() })) });
+export const CreateOrgInvitationRequest = z.object({ email: z.email(), role: InvitableOrgRole });
+export const CreateOrgInvitationResponse = z.object({ invitationId: Id, expiresAt: z.iso.datetime() });
+export const OrgInvitationTokenRequest = z.object({ token: z.string().min(32).max(200) });
+export const AcceptOrgInvitationResponse = z.object({ organizationId: Id, role: InvitableOrgRole });
+export const UpdateOrgMemberRequest = z.object({ role: InvitableOrgRole });
+export const TransferOwnershipRequest = z.object({ userId: Id });
+/** Deleting an organization erases its pipeline, notes and saved searches. The client must send DELETE. */
+export const DeleteOrganizationRequest = z.object({ confirm: z.literal('DELETE', { error: 'type DELETE to confirm' }) });
+
+// ---------------------------------------------------------------- scout CRM (phase D)
+export const CrmStage = z.enum(['new', 'watching', 'shortlisted', 'monitoring', 'contact_requested', 'contacted', 'evaluation', 'archived']);
+/** Stages a card can be placed in directly; contact stages are reached through the contact-request flow. */
+export const DirectCrmStage = z.enum(['new', 'watching', 'shortlisted', 'monitoring', 'archived']);
+export const CrmTag = z.string().trim().min(1).max(32);
+export const CrmEntryView = z.object({
+  id: Id,
+  player: PlayerCard,
+  stage: CrmStage,
+  tags: z.array(z.string()),
+  contactRequest: z.object({ id: Id, status: z.enum(['pending', 'accepted', 'declined']), viaGuardian: z.boolean() }).nullable(),
+  createdAt: z.iso.datetime(),
+  updatedAt: z.iso.datetime(),
+});
+export const PipelineQuery = z.object({ stage: CrmStage.optional(), tag: CrmTag.optional() });
+export const PipelineView = z.object({ stages: z.array(CrmStage), items: z.array(CrmEntryView) });
+export const AddToPipelineRequest = z.object({ stage: DirectCrmStage.default('new'), tags: z.array(CrmTag).max(20).default([]) });
+export const CrmStageChangeRequest = z.object({
+  stage: CrmStage,
+  /** Required when moving to contact_requested: the message sent to the player, or to their guardian. */
+  message: z.string().trim().min(10).max(1000).optional(),
+});
+export const UpdateCrmEntryRequest = z.object({ tags: z.array(CrmTag).max(20) });
+export const CrmNoteView = z.object({
+  id: Id, body: z.string(), author: z.object({ userId: Id, handle: z.string() }).nullable(), createdAt: z.iso.datetime(),
+});
+export const CreateCrmNoteRequest = z.object({ body: z.string().trim().min(1).max(4000) });
+export const CrmEntryDetail = CrmEntryView.extend({
+  history: z.array(z.object({
+    from: CrmStage.nullable(), to: CrmStage, changedBy: z.object({ userId: Id, handle: z.string() }).nullable(), at: z.iso.datetime(),
+  })),
+  notes: z.array(CrmNoteView),
+});
+
+/** Saved-search filters are scout-search filters (the same schema, without paging). */
+export const SavedSearchFilters = ScoutSearchQuery.omit({ cursor: true, limit: true });
+export const CreateSavedSearchRequest = z.object({
+  name: z.string().trim().min(1).max(80),
+  filters: SavedSearchFilters,
+  alerts: z.boolean().default(false),
+});
+export const UpdateSavedSearchRequest = z.object({ name: z.string().trim().min(1).max(80).optional(), alerts: z.boolean().optional() });
+export const SavedSearchView = z.object({
+  id: Id,
+  name: z.string(),
+  filters: z.record(z.string(), z.unknown()),
+  alerts: z.boolean(),
+  /** Clips alerted so far. */
+  matches: z.number().int(),
+  createdBy: z.object({ userId: Id, handle: z.string() }).nullable(),
+  createdAt: z.iso.datetime(),
+});
+export const SavedSearchList = z.object({ items: z.array(SavedSearchView) });

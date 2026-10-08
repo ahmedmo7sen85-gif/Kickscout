@@ -7,6 +7,12 @@ describe('notification preferences', () => {
     expect(notificationCategory('contact.requested')).toBe('scout_contact');
     expect(notificationCategory('verification.approved')).toBe('verification');
     expect(notificationCategory('save.milestone')).toBe('save_milestone');
+    expect(notificationCategory('saved_search.match')).toBe('shortlist_activity');
+  });
+
+  it('lets a scout switch saved-search alerts off with shortlist activity', () => {
+    expect(shouldDeliver('saved_search.match', { ...DEFAULT_NOTIFICATION_PREFERENCES, shortlist_activity: false })).toBe(false);
+    expect(shouldDeliver('saved_search.match', DEFAULT_NOTIFICATION_PREFERENCES)).toBe(true);
   });
 
   it('respects a switched-off category', () => {

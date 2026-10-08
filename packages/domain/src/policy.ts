@@ -3,6 +3,8 @@
  */
 import { isMinor } from './age.js';
 import type { AgeBand } from './age.js';
+import { orgCan } from './orgs.js';
+import type { OrgAction, OrgRole } from './orgs.js';
 
 export type Role = 'player' | 'fan' | 'scout' | 'moderator' | 'admin';
 export type UserStatus = 'pending_consent' | 'active' | 'suspended' | 'deleted';
@@ -39,7 +41,11 @@ export type Action =
   | { kind: 'admin.access' }
   | { kind: 'moderation.act' }
   | { kind: 'verification.decide' }
-  | { kind: 'challenge.manage' };
+  | { kind: 'challenge.manage' }
+  /** Founding an organization (club, academy, agency, school). */
+  | { kind: 'org.create' }
+  /** Acting inside an organization; `role` is the actor's membership role there (null: not a member). */
+  | { kind: 'org.act'; role: OrgRole | null; action: OrgAction };
 
 export type Decision = { allowed: true } | { allowed: false; code: string; reason: string };
 
@@ -135,6 +141,18 @@ export function can(actor: Actor, action: Action): Decision {
     case 'moderation.act':
       if (!isStaff(actor)) return deny('FORBIDDEN', 'moderators only');
       return actor.mfa ? allow : deny('MFA_REQUIRED', 'moderation requires MFA');
+
+    case 'org.create':
+      return isMinor(actor.ageBand) ? deny('ADULTS_ONLY', 'organizations are run by adults') : allow;
+
+    case 'org.act':
+      if (action.role === null) return deny('NOT_A_MEMBER', 'you are not a member of this organization');
+      if (!orgCan(action.role, action.action)) return deny('ORG_ROLE_REQUIRED', 'your role in this organization does not allow this');
+      // Working with players in a pipeline is scouting: the person must be a verified scout as well.
+      if (action.action === 'crm.write' && !has(actor, 'scout') && !has(actor, 'admin')) {
+        return deny('SCOUT_VERIFICATION_REQUIRED', 'verified scouts only');
+      }
+      return allow;
 
     case 'verification.decide':
     case 'challenge.manage':

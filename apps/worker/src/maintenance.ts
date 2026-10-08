@@ -3,6 +3,7 @@ import type { Database } from '@fp/db';
 import type { Logger } from './pipeline.js';
 import type { VideoStorage } from './storage/storage.js';
 import { playbackKey, thumbnailKey } from './storage/storage.js';
+import { runSavedSearchAlerts } from './alerts.js';
 
 export interface MaintenanceOptions {
   /** Days a published video's original is kept after publishing (for re-processing), before it is removed. */
@@ -20,6 +21,8 @@ export interface MaintenanceReport {
   originalsPurged: number;
   deliveryPurged: number;
   rateLimitRowsPruned: number;
+  /** Saved-search alert notifications sent by this run (catch-up for anything the publish-time call missed). */
+  alertNotifications: number;
   errors: number;
 }
 
@@ -35,7 +38,7 @@ export async function runMaintenance(
   now: Date = new Date(),
   opts: MaintenanceOptions = DEFAULT_MAINTENANCE,
 ): Promise<MaintenanceReport> {
-  const report: MaintenanceReport = { abandonedUploads: 0, originalsPurged: 0, deliveryPurged: 0, rateLimitRowsPruned: 0, errors: 0 };
+  const report: MaintenanceReport = { abandonedUploads: 0, originalsPurged: 0, deliveryPurged: 0, rateLimitRowsPruned: 0, alertNotifications: 0, errors: 0 };
   const hoursAgo = (h: number) => new Date(now.getTime() - h * 3_600_000);
 
   const abandoned = await db
@@ -94,6 +97,13 @@ export async function runMaintenance(
 
   const pruned = await db.deleteFrom('rate_limit_hits').where('reset_at', '<', sql<Date>`${now}::timestamptz - interval '1 hour'`).executeTakeFirst();
   report.rateLimitRowsPruned = Number(pruned.numDeletedRows);
+
+  try {
+    report.alertNotifications = (await runSavedSearchAlerts(db, { now })).notifications;
+  } catch (err) {
+    report.errors++;
+    log.warn('saved-search alerts failed', { error: (err as Error).message });
+  }
 
   log.info('maintenance finished', { ...report });
   return report;

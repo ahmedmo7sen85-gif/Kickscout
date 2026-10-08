@@ -68,6 +68,7 @@ export function TopNav() {
               : <Link href="/login" className="btn btn--secondary btn--sm">{t.common.logIn}</Link>}
           </li>
           {isScout ? <li className="top-nav__desktop">{link('/scout', t.nav.scout)}</li> : null}
+          {isScout ? <li className="top-nav__desktop">{link('/scout/pipeline', t.nav.pipeline)}</li> : null}
           {isStaff ? <li className="top-nav__desktop">{link('/admin', t.nav.admin)}</li> : null}
           <li>
             <Link href="/search" className={`top-nav__icon${isActive(pathname, '/search') ? ' is-active' : ''}`} aria-label={t.nav.search} title={t.nav.search}><Icon name="search" /></Link>

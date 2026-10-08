@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { AddToPipeline } from '@/components/crm/AddToPipeline';
 import { Button } from '@/components/ui/Button';
 import { Sheet } from '@/components/ui/Sheet';
 import { SkeletonList } from '@/components/ui/Skeleton';
@@ -41,6 +42,7 @@ export function ScoutActions({ playerId, playerName, canRequestContact, isMinor,
       ]} />
       {tab === 'shortlist' ? (
         <div className="stack">
+          <AddToPipeline playerId={playerId} />
           {lists.status === 'loading' ? <SkeletonList rows={2} label={t.common.loading} /> : null}
           {lists.status === 'error' ? <ErrorState error={lists.error} onRetry={lists.retry} /> : null}
           {lists.status === 'success' ? (

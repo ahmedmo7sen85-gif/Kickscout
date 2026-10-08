@@ -83,10 +83,10 @@ describe('maintenance', () => {
     expect((await getVideo(env.db, deleted.id)).delivery_purged_at).toBeInstanceOf(Date);
     const keys = (await env.db.selectFrom('rate_limit_hits').select('key').execute()).map((r) => r.key);
     expect(keys).toEqual(['live']);
-    expect(report).toEqual({ abandonedUploads: 1, originalsPurged: 4, deliveryPurged: 1, rateLimitRowsPruned: 1, errors: 0 });
+    expect(report).toEqual({ abandonedUploads: 1, originalsPurged: 4, deliveryPurged: 1, rateLimitRowsPruned: 1, alertNotifications: 0, errors: 0 });
 
     const again = await runMaintenance(env.db, env.storage, silentLog, now, DEFAULT_MAINTENANCE);
-    expect(again).toEqual({ abandonedUploads: 0, originalsPurged: 0, deliveryPurged: 0, rateLimitRowsPruned: 0, errors: 0 });
+    expect(again).toEqual({ abandonedUploads: 0, originalsPurged: 0, deliveryPurged: 0, rateLimitRowsPruned: 0, alertNotifications: 0, errors: 0 });
   });
 
   it('keeps going and reports when storage fails for one video', async () => {

@@ -136,6 +136,9 @@ importers:
       '@aws-sdk/client-s3':
         specifier: ^3.900.0
         version: 3.1147.0
+      '@fp/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
       '@fp/db':
         specifier: workspace:*
         version: link:../../packages/db
