@@ -63,7 +63,7 @@ export async function createTestEnv(): Promise<TestEnv> {
   const config = {
     NODE_ENV: 'test', PORT: 0, DATABASE_URL: url.toString(), AUTH_JWKS_URL: 'https://idp.test/jwks', AUTH_ISSUER: ISSUER,
     AUTH_AUDIENCE: AUDIENCE, S3_REGION: 'eu-central-1', S3_BUCKET_ORIGINALS: 'test', S3_FORCE_PATH_STYLE: true, CDN_BASE_URL: 'https://cdn.test',
-    DOB_ENCRYPTION_KEY: randomBytes(32).toString('base64'), VIEWER_HASH_SECRET: randomBytes(32).toString('hex'), MAILER: 'log', POLICY_VERSION: 'test-1',
+    DOB_ENCRYPTION_KEY: randomBytes(32).toString('base64'), VIEWER_HASH_SECRET: randomBytes(32).toString('hex'), MAILER: 'log', ALLOW_LOG_MAILER: 'no', POLICY_VERSION: 'test-1',
     CORS_ORIGINS: 'https://web.test',
   } satisfies Config;
   const deps: Deps = { config, db, verifier, storage, mailer, dobKey: Buffer.from(config.DOB_ENCRYPTION_KEY, 'base64'), now: () => new Date() };

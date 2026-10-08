@@ -154,6 +154,12 @@ bypassed. CI (`.github/workflows/ci.yml`) runs build, typecheck and tests on eve
 | Worker | Same host family, using `apps/worker/Dockerfile` (includes ffmpeg) |
 | CDN | Supabase Storage CDN or Cloudflare R2 public bucket |
 
+The API also runs on Vercel: create a project with root directory `apps/api` (its `vercel.json`
+routes every path to one function, `src/vercel.ts`) and point `DATABASE_URL` at Supabase's
+transaction pooler (port 6543). The web app is a second Vercel project with root `apps/web`.
+`apps/web/public/demo-media/promo` holds labelled placeholder clips for the demo seed until the
+AI promo clips are rendered.
+
 Deploy order: database → run migrations → API → worker → web. Everything can be deployed
 incrementally.
 

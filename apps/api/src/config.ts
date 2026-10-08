@@ -21,11 +21,13 @@ const Env = z
     /** Secret for hashing signed-out viewers into daily view counts (no raw IPs are stored). */
     VIEWER_HASH_SECRET: z.string().min(32),
     MAILER: z.enum(['log', 'ses']).default('log'),
+    /** 'yes' lets a labelled preview deployment run with MAILER=log (guardian emails are only logged). */
+    ALLOW_LOG_MAILER: z.enum(['yes', 'no']).default('no'),
     POLICY_VERSION: z.string().default('2026-10-draft'),
     /** Comma-separated origins allowed to call the API from a browser (the web app). */
     CORS_ORIGINS: z.string().default('http://localhost:3000'),
   })
-  .refine((e) => !(e.NODE_ENV === 'production' && e.MAILER === 'log'), {
+  .refine((e) => !(e.NODE_ENV === 'production' && e.MAILER === 'log' && e.ALLOW_LOG_MAILER !== 'yes'), {
     message: 'MAILER=log is for development only; configure a real mailer in production',
     path: ['MAILER'],
   });
