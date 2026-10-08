@@ -1,24 +1,50 @@
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
-import { CreateUploadRequest, RegisterRequest, buildOpenApi } from './index.js';
+import {
+  CopyrightTakedownRequest, CreateUploadRequest, DeleteAccountRequest, Position, RegisterRequest, SkillKey, UpdateNotificationPreferencesRequest,
+  VideoCategory, buildOpenApi,
+} from './index.js';
 
 describe('contracts', () => {
   it('normalises hashtags and rejects junk', () => {
-    const base = { title: 'Elastico', contentType: 'video/mp4', sizeBytes: 1000 };
+    const base = { title: 'Elastico', contentType: 'video/mp4', sizeBytes: 1000, rightsConfirmed: true };
     expect(CreateUploadRequest.parse({ ...base, hashtags: ['#Skills', 'مهارات'] }).hashtags).toEqual(['skills', 'مهارات']);
     expect(CreateUploadRequest.safeParse({ ...base, hashtags: ['no spaces'] }).success).toBe(false);
   });
 
   it('rejects a trim that ends before it starts', () => {
-    const base = { title: 'x', contentType: 'video/mp4', sizeBytes: 1000 };
+    const base = { title: 'x', contentType: 'video/mp4', sizeBytes: 1000, rightsConfirmed: true };
     expect(CreateUploadRequest.safeParse({ ...base, trimStartMs: 5000, trimEndMs: 1000 }).success).toBe(false);
   });
 
   it('accepts only the supported video formats and sizes', () => {
-    const base = { sizeBytes: 1000, title: 'Goal' };
+    const base = { sizeBytes: 1000, title: 'Goal', rightsConfirmed: true };
     expect(CreateUploadRequest.safeParse({ ...base, contentType: 'video/mp4' }).success).toBe(true);
     expect(CreateUploadRequest.safeParse({ ...base, contentType: 'video/x-msvideo' }).success).toBe(false);
     expect(CreateUploadRequest.safeParse({ ...base, contentType: 'video/mp4', sizeBytes: 10 ** 10 }).success).toBe(false);
+  });
+
+  it('requires the uploader to confirm they own the video', () => {
+    const base = { title: 'Goal', contentType: 'video/mp4', sizeBytes: 1000 };
+    expect(CreateUploadRequest.safeParse(base).success).toBe(false);
+    expect(CreateUploadRequest.safeParse({ ...base, rightsConfirmed: false }).success).toBe(false);
+    expect(CreateUploadRequest.safeParse({ ...base, rightsConfirmed: true }).success).toBe(true);
+  });
+
+  it('covers the extended taxonomy and keeps the old video categories valid', () => {
+    expect(Position.options).toEqual(expect.arrayContaining(['WB', 'FW']));
+    expect(SkillKey.options).toEqual(expect.arrayContaining(['la_croqueta', 'through_ball', 'reflexes', 'match_highlight']));
+    for (const c of ['match', 'training', 'freestyle', 'challenge', 'other', 'goal', 'one_v_one', 'showcase']) expect(VideoCategory.safeParse(c).success).toBe(true);
+  });
+
+  it('demands explicit statements and confirmations', () => {
+    const claim = { claimantName: 'Rights Holder', email: 'legal@example.com', video: 'https://kickscout.test/v/x', description: 'This is my own match footage, filmed in 2025.' };
+    expect(CopyrightTakedownRequest.safeParse({ ...claim, goodFaith: true, accurate: true }).success).toBe(true);
+    expect(CopyrightTakedownRequest.safeParse({ ...claim, goodFaith: true, accurate: false }).success).toBe(false);
+    expect(DeleteAccountRequest.safeParse({ confirm: 'delete' }).success).toBe(false);
+    expect(DeleteAccountRequest.safeParse({ confirm: 'DELETE' }).success).toBe(true);
+    expect(UpdateNotificationPreferencesRequest.safeParse({ like: false }).success).toBe(true);
+    expect(UpdateNotificationPreferencesRequest.safeParse({ security: false }).success).toBe(false);
   });
 
   it('does not let sign-up pick privileged roles', () => {

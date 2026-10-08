@@ -20,6 +20,8 @@ English first, Arabic (RTL) ready.
 | Feed and social | For You, Following, New Talent, Trending; like, save, comment, share, follow, block, report; views counted once per viewer per day | API tests |
 | Discovery | Search (players, videos, hashtags, skills, country, position, foot), Discover page, Talent Radar with "Trending because…" reasons and categories (rising, most watched, most saved, new talents, hidden gems), challenges with direct-to-challenge upload | API + domain tests |
 | Scouts | Verification by staff, filtered player search (age group, position, foot, country, skill, verified, followers), multiple shortlists, private notes, contact requests the player (or guardian) accepts or declines | API tests |
+| Privacy and account | Public / unlisted / followers / private profiles; toggles for scout discovery, contact requests, country, region and age, enforced in every list and search (a minor can only tighten them; loosening needs the guardian); notification preferences per category (security alerts always on); JSON data export; account deletion with typed confirmation (a minor's request waits for the guardian, profile hidden meanwhile) | API + domain tests |
+| Copyright and legal | Ownership declaration on every upload; public takedown form that opens a priority moderation case; counter-notice by the uploader or guardian; repeat-infringer count shown to admins; draft Terms, Privacy (incl. cookies), Community Guidelines, Copyright, Safety, Scout and Subscription terms, all marked "draft pending legal review" | API + web tests |
 | Admin | Moderation queue (AI flags, rule hits, merged user reports) with approve / reject / remove / restrict / escalate / suspend, verification decisions, user suspend/restore, challenges, jurisdiction rules, stats, append-only audit log | API tests |
 | Web app | Next.js app in the KICKSCOUT design: landing page, feed, upload flow, profiles, Discover, Talent Radar, challenges, search, scout dashboard, notifications, settings, admin | See `apps/web` |
 | Demo content | Labelled demo players, scout and challenges using the 20 promo clips, refused in production | API test |
@@ -27,7 +29,7 @@ English first, Arabic (RTL) ready.
 ### Not built yet (and labelled as such in the product)
 
 - Natural-language search, personalised recommendations (For You is newest-first today), scout
-  comparison, direct messaging, Apple sign-in, notification preferences, paid plans: these return
+  comparison, direct messaging, Apple sign-in, paid plans: these return
   **Coming Soon** capability labels.
 - Malware scanning of uploads (files are fully decoded by ffmpeg, which rejects non-video files).
 - Production email for guardian invitations (`MAILER=log` prints the link; production refuses to

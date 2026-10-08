@@ -1,5 +1,6 @@
 import type { Transaction } from 'kysely';
 import type { DB } from '@fp/db';
+import { shouldDeliver } from '@fp/domain';
 import { newId } from './ids.js';
 
 /**
@@ -32,7 +33,12 @@ export async function enqueue(tx: Transaction<DB>, kind: string, payload: Record
   await tx.insertInto('jobs').values({ kind, payload: JSON.stringify(payload) }).execute();
 }
 
-/** In-app notification, written in the caller's transaction. */
+/**
+ * In-app notification, written in the caller's transaction. Skipped when the recipient turned the
+ * kind's category off; security, safety and moderation notices are always delivered.
+ */
 export async function notify(tx: Transaction<DB>, userId: string, kind: string, payload: Record<string, unknown> = {}) {
+  const prefs = await tx.selectFrom('notification_preferences').selectAll().where('user_id', '=', userId).executeTakeFirst();
+  if (prefs && !shouldDeliver(kind, prefs)) return;
   await tx.insertInto('notifications').values({ id: newId(), user_id: userId, kind, payload: JSON.stringify(payload) }).execute();
 }

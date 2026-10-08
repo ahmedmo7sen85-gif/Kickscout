@@ -103,6 +103,32 @@ export interface ContactRequests {
   status: Generated<string>;
 }
 
+export interface CopyrightClaims {
+  accurate: boolean;
+  claimant_email: string;
+  claimant_name: string;
+  claimant_user_id: string | null;
+  created_at: Generated<Timestamp>;
+  decided_at: Timestamp | null;
+  description: string;
+  good_faith: boolean;
+  id: string;
+  status: Generated<string>;
+  video_id: string;
+}
+
+export interface CopyrightCounterNotices {
+  created_at: Generated<Timestamp>;
+  decided_at: Timestamp | null;
+  explanation: string;
+  full_name: string;
+  good_faith: boolean;
+  id: string;
+  status: Generated<string>;
+  submitted_by: string;
+  video_id: string;
+}
+
 export interface Follows {
   created_at: Generated<Timestamp>;
   followee_id: string;
@@ -181,6 +207,20 @@ export interface ModerationCases {
   target_kind: string;
 }
 
+export interface NotificationPreferences {
+  announcements: Generated<boolean>;
+  challenge: Generated<boolean>;
+  comment: Generated<boolean>;
+  follower: Generated<boolean>;
+  like: Generated<boolean>;
+  save_milestone: Generated<boolean>;
+  scout_contact: Generated<boolean>;
+  shortlist_activity: Generated<boolean>;
+  updated_at: Generated<Timestamp>;
+  user_id: string;
+  verification: Generated<boolean>;
+}
+
 export interface Notifications {
   created_at: Generated<Timestamp>;
   id: string;
@@ -208,10 +248,15 @@ export interface PlayerProfiles {
 }
 
 export interface PrivacySettings {
+  allow_contact_requests: Generated<boolean>;
+  allow_scout_discovery: Generated<boolean>;
   comments: Generated<string>;
   direct_messages: Generated<boolean>;
   profile_visibility: Generated<string>;
   region_precision: Generated<string>;
+  show_age: Generated<boolean>;
+  show_country: Generated<boolean>;
+  show_region: Generated<boolean>;
   updated_at: Generated<Timestamp>;
   user_id: string;
 }
@@ -294,6 +339,7 @@ export interface UserRoles {
 export interface Users {
   created_at: Generated<Timestamp>;
   deleted_at: Timestamp | null;
+  deletion_requested_at: Timestamp | null;
   email: string | null;
   email_verified: Generated<boolean>;
   id: string;
@@ -341,6 +387,7 @@ export interface Videos {
   position: string | null;
   published_at: Timestamp | null;
   region_id: string | null;
+  rights_confirmed_at: Timestamp | null;
   sha256: Buffer | null;
   size_bytes: Int8;
   skill_key: string | null;
@@ -378,6 +425,8 @@ export interface DB {
   comments: Comments;
   consents: Consents;
   contact_requests: ContactRequests;
+  copyright_claims: CopyrightClaims;
+  copyright_counter_notices: CopyrightCounterNotices;
   follows: Follows;
   guardian_invitations: GuardianInvitations;
   guardian_relationships: GuardianRelationships;
@@ -386,6 +435,7 @@ export interface DB {
   jurisdiction_rules: JurisdictionRules;
   likes: Likes;
   moderation_cases: ModerationCases;
+  notification_preferences: NotificationPreferences;
   notifications: Notifications;
   outbox: Outbox;
   player_profiles: PlayerProfiles;

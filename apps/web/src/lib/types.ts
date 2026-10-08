@@ -87,3 +87,16 @@ export type VerificationDecisionRequest = z.input<typeof C.VerificationDecisionR
 export type AuditLogView = z.infer<typeof C.AuditLogView>;
 export type AuditLogPage = z.infer<typeof C.AuditLogPage>;
 export type AdminStats = z.infer<typeof C.AdminStats>;
+
+export type ProfileVisibility = z.infer<typeof C.ProfileVisibility>;
+export type PrivacySettingsView = z.infer<typeof C.PrivacySettingsView>;
+export type UpdatePrivacyRequest = z.input<typeof C.UpdatePrivacyRequest>;
+export type NotificationPreferencesView = z.infer<typeof C.NotificationPreferencesView>;
+export type NotificationPreferenceKey = Exclude<keyof NotificationPreferencesView, 'security'>;
+export type UpdateNotificationPreferencesRequest = z.input<typeof C.UpdateNotificationPreferencesRequest>;
+export type AccountExport = z.infer<typeof C.AccountExport>;
+export type DeleteAccountRequest = z.input<typeof C.DeleteAccountRequest>;
+export type DeleteAccountResponse = z.infer<typeof C.DeleteAccountResponse>;
+export type CopyrightTakedownRequest = z.input<typeof C.CopyrightTakedownRequest>;
+export type CopyrightTakedownResponse = z.infer<typeof C.CopyrightTakedownResponse>;
+export type CounterNoticeRequest = z.input<typeof C.CounterNoticeRequest>;

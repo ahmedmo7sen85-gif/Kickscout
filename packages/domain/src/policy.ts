@@ -28,6 +28,10 @@ export type Action =
   | { kind: 'scout.contact'; playerId: string; playerAcceptsContact: boolean }
   | { kind: 'challenge.enter'; videoOwnerId: string }
   | { kind: 'profile.update'; subjectId: string }
+  /** `loosens`: the change exposes more (see loosensPrivacy). `opensProfile`: anything other than private. */
+  | { kind: 'privacy.update'; subjectId: string; subjectMinor: boolean; loosens: boolean; opensProfile: boolean; publicProfileConsent: boolean }
+  | { kind: 'account.delete'; subjectId: string; subjectMinor: boolean; subjectHasGuardian: boolean }
+  | { kind: 'copyright.counter_notice'; ownerId: string; ownerMinor: boolean }
   | { kind: 'comment.create'; videoOwnerId: string; commentsSetting: 'everyone' | 'followers' | 'off'; isFollower: boolean; blocked: boolean }
   | { kind: 'social.engage' }
   | { kind: 'report.create' }
@@ -51,8 +55,8 @@ const isSelfOrGuardian = (a: Actor, subjectId: string) => a.userId === subjectId
 export function can(actor: Actor, action: Action): Decision {
   if (actor.status === 'deleted' || actor.status === 'suspended') return deny('ACCOUNT_INACTIVE', 'account is not active');
 
-  // Accounts awaiting guardian consent may only view their own state and record consent.
-  if (actor.status === 'pending_consent' && action.kind !== 'consent.grant') {
+  // Accounts awaiting guardian consent may only view their own state, record consent, or ask to be deleted.
+  if (actor.status === 'pending_consent' && action.kind !== 'consent.grant' && action.kind !== 'account.delete') {
     return deny('CONSENT_REQUIRED', 'guardian consent is required before using the platform');
   }
 
@@ -81,6 +85,29 @@ export function can(actor: Actor, action: Action): Decision {
 
     case 'profile.update':
       return isSelfOrGuardian(actor, action.subjectId) || has(actor, 'admin') ? allow : deny('FORBIDDEN', 'not your profile');
+
+    case 'privacy.update': {
+      const guardianOrAdmin = actor.guardianOf.includes(action.subjectId) || has(actor, 'admin');
+      if (actor.userId !== action.subjectId && !guardianOrAdmin) return deny('FORBIDDEN', 'not your settings');
+      if (!action.subjectMinor) return allow;
+      // A minor's profile opens only on the guardian's public-profile consent, and only the guardian
+      // may loosen any other setting. A minor can always make their own settings stricter.
+      if (action.opensProfile && !action.publicProfileConsent) return deny('GUARDIAN_REQUIRED', 'a guardian must approve a visible profile first');
+      if (action.loosens && !guardianOrAdmin) return deny('GUARDIAN_REQUIRED', 'your guardian must approve this change');
+      return allow;
+    }
+
+    case 'account.delete':
+      if (actor.guardianOf.includes(action.subjectId)) return allow;
+      if (actor.userId !== action.subjectId) return deny('FORBIDDEN', 'not your account');
+      // Where a guardian is linked, a minor's deletion waits for them (the account is hidden meanwhile).
+      return action.subjectMinor && action.subjectHasGuardian ? deny('GUARDIAN_REQUIRED', 'your guardian must confirm the deletion') : allow;
+
+    case 'copyright.counter_notice':
+      if (actor.guardianOf.includes(action.ownerId)) return allow;
+      if (actor.userId !== action.ownerId) return deny('FORBIDDEN', 'not your video');
+      // A counter-notice is a legal statement; for a minor the guardian makes it.
+      return action.ownerMinor ? deny('GUARDIAN_REQUIRED', 'a guardian must file this for a minor') : allow;
 
     case 'comment.create':
       if (action.blocked) return deny('BLOCKED', 'you cannot comment here');

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { projectProfile } from './privacy.js';
+import { loosensPrivacy, projectProfile } from './privacy.js';
 import type { StoredProfile } from './privacy.js';
 
 const base = (over: Partial<StoredProfile> = {}): StoredProfile => ({
@@ -11,7 +11,10 @@ const base = (over: Partial<StoredProfile> = {}): StoredProfile => ({
   ageBand: 'u16',
   email: 'p1@example.com',
   region: { macro: 'north-africa', country: 'EG', city: 'cairo' },
-  privacy: { profileVisibility: 'public', regionPrecision: 'city', directMessages: true, comments: 'everyone' },
+  privacy: {
+    profileVisibility: 'public', regionPrecision: 'city', directMessages: true, comments: 'everyone',
+    allowScoutDiscovery: true, allowContactRequests: true, showCountry: true, showRegion: true, showAge: true,
+  },
   player: { primaryPosition: 'RW', secondaryPositions: [], preferredFoot: 'left' },
   ...over,
 });
@@ -55,5 +58,47 @@ describe('projectProfile', () => {
     const followersOnly = base({ privacy: { ...base().privacy, profileVisibility: 'followers' } });
     expect(projectProfile(followersOnly, 'public')).toBeNull();
     expect(projectProfile(followersOnly, 'follower')).not.toBeNull();
+  });
+
+  it('opens unlisted profiles by direct link like public ones', () => {
+    const unlisted = base({ privacy: { ...base().privacy, profileVisibility: 'unlisted' } });
+    expect(projectProfile(unlisted, 'public')).not.toBeNull();
+  });
+
+  it('applies the show and contact toggles to everyone but self, guardian and admin', () => {
+    const adult = base({ ageBand: 'adult' });
+    const hidden = base({ ageBand: 'adult', privacy: { ...adult.privacy, showCountry: false, showAge: false, allowContactRequests: false } });
+    const p = projectProfile(hidden, 'verified_scout')!;
+    expect(p.region).toEqual({ macro: 'north-africa', country: null, city: null });
+    expect(p.ageGroup).toBeNull();
+    expect(p.canRequestContact).toBe(false);
+    expect(projectProfile(hidden, 'self')!.region.country).toBe('EG');
+    const noRegion = base({ ageBand: 'adult', privacy: { ...adult.privacy, showRegion: false } });
+    expect(projectProfile(noRegion, 'public')!.region).toEqual({ macro: null, country: 'EG', city: null });
+    const noDiscovery = base({ ageBand: 'adult', privacy: { ...adult.privacy, allowScoutDiscovery: false } });
+    expect(projectProfile(noDiscovery, 'verified_scout')!.canRequestContact).toBe(false);
+  });
+
+  it('never lets a toggle hide that a player is a minor from verified scouts', () => {
+    const kid = base({ privacy: { ...base().privacy, showAge: false } });
+    const p = projectProfile(kid, 'verified_scout')!;
+    expect(p.ageGroup).toBeNull();
+    expect(p.isMinor).toBe(true);
+    // ...and turning a toggle on never shows a minor's city to the public.
+    expect(projectProfile(base(), 'public')!.region.city).toBeNull();
+  });
+});
+
+describe('loosensPrivacy', () => {
+  const s = base().privacy;
+  it('detects any change that exposes more', () => {
+    expect(loosensPrivacy({ ...s, profileVisibility: 'private' }, { ...s, profileVisibility: 'unlisted' })).toBe(true);
+    expect(loosensPrivacy({ ...s, showAge: false }, s)).toBe(true);
+    expect(loosensPrivacy({ ...s, comments: 'followers' }, s)).toBe(true);
+    expect(loosensPrivacy({ ...s, regionPrecision: 'country' }, s)).toBe(true);
+  });
+  it('treats stricter changes as safe', () => {
+    expect(loosensPrivacy(s, { ...s, profileVisibility: 'unlisted', showCountry: false, allowContactRequests: false, comments: 'off' })).toBe(false);
+    expect(loosensPrivacy(s, s)).toBe(false);
   });
 });

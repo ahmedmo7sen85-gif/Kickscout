@@ -1,9 +1,9 @@
 import { z } from 'zod';
 import { sql } from 'kysely';
 import type { Transaction } from 'kysely';
-import type { DB } from '@fp/db';
+import type { Database, DB } from '@fp/db';
 import {
-  UserStatusRequest,
+  CopyrightClaimView, CounterNoticeView, UserStatusRequest,
   AdminStats, AuditLogPage, ChallengeView, CreateChallengeRequest, JurisdictionRuleRequest, ModerationCaseList, ModerationCaseQuery,
   ModerationDecisionRequest, VerificationDecisionRequest, VerificationRequestList,
 } from '@fp/contracts';
@@ -17,7 +17,7 @@ import { challengeViews } from './challenges.js';
 /** Opens a moderation case, or merges into the open case for the same target. */
 export async function openCase(
   tx: Transaction<DB>,
-  c: { targetKind: 'video' | 'comment' | 'user'; targetId: string; source: 'ai' | 'rules' | 'report' | 'appeal'; categories: string[]; priority: number; reports?: number; aiVerdict?: unknown },
+  c: { targetKind: 'video' | 'comment' | 'user'; targetId: string; source: 'ai' | 'rules' | 'report' | 'appeal' | 'copyright'; categories: string[]; priority: number; reports?: number; aiVerdict?: unknown },
 ) {
   await tx.insertInto('moderation_cases').values({
     id: newId(), target_kind: c.targetKind, target_id: c.targetId, source: c.source, categories: c.categories, priority: c.priority,
@@ -27,6 +27,64 @@ export async function openCase(
     priority: sql<number>`LEAST(${eb.ref('moderation_cases.priority')}, ${eb.ref('excluded.priority')})`,
     report_count: sql<number>`${eb.ref('moderation_cases.report_count')} + ${eb.ref('excluded.report_count')}`,
   }))).execute();
+}
+
+/**
+ * Settles the copyright side of a moderation decision on a video. Removing, rejecting, restricting
+ * or suspending upholds open claims (each counts towards the uploader's repeat-infringer total);
+ * approving or dismissing rejects them. A pending counter-notice is accepted when the video is
+ * approved again (its upheld claims are reversed) and rejected otherwise.
+ */
+export async function settleCopyright(tx: Transaction<DB>, videoId: string, decision: string, now: Date) {
+  const removed = decision === 'remove' || decision === 'reject' || decision === 'restrict' || decision === 'suspend';
+  await tx.updateTable('copyright_claims').set({ status: removed ? 'upheld' : 'rejected', decided_at: now })
+    .where('video_id', '=', videoId).where('status', '=', 'open').execute();
+  const notice = await tx.selectFrom('copyright_counter_notices').select('id').where('video_id', '=', videoId).where('status', '=', 'pending').executeTakeFirst();
+  if (!notice) return;
+  const accepted = decision === 'approve';
+  await tx.updateTable('copyright_counter_notices').set({ status: accepted ? 'accepted' : 'rejected', decided_at: now }).where('id', '=', notice.id).execute();
+  if (accepted) {
+    await tx.updateTable('copyright_claims').set({ status: 'reversed', decided_at: now }).where('video_id', '=', videoId).where('status', '=', 'upheld').execute();
+  }
+}
+
+/** Copyright claims, counter-notices and the owner's repeat-infringer count for a page of cases. */
+async function copyrightContext(db: Database, cases: { target_kind: string; target_id: string }[]) {
+  const videoIds = cases.filter((c) => c.target_kind === 'video').map((c) => c.target_id);
+  const commentIds = cases.filter((c) => c.target_kind === 'comment').map((c) => c.target_id);
+  const [claims, notices, videoOwners, commentAuthors] = await Promise.all([
+    videoIds.length ? db.selectFrom('copyright_claims').selectAll().where('video_id', 'in', videoIds).orderBy('created_at', 'desc').execute() : Promise.resolve([]),
+    videoIds.length ? db.selectFrom('copyright_counter_notices').selectAll().where('video_id', 'in', videoIds).orderBy('created_at', 'desc').execute() : Promise.resolve([]),
+    videoIds.length ? db.selectFrom('videos').select(['id', 'owner_user_id']).where('id', 'in', videoIds).execute() : Promise.resolve([]),
+    commentIds.length ? db.selectFrom('comments').select(['id', 'author_id']).where('id', 'in', commentIds).execute() : Promise.resolve([]),
+  ]);
+  const ownerOf = new Map<string, string>([...videoOwners.map((v) => [v.id, v.owner_user_id] as const), ...commentAuthors.map((c) => [c.id, c.author_id] as const)]);
+  for (const c of cases) if (c.target_kind === 'user') ownerOf.set(c.target_id, c.target_id);
+  const owners = [...new Set(ownerOf.values())];
+  const strikes = owners.length
+    ? await db.selectFrom('copyright_claims').innerJoin('videos', 'videos.id', 'copyright_claims.video_id')
+      .select(['videos.owner_user_id', db.fn.count<string>('copyright_claims.video_id').distinct().as('n')])
+      .where('copyright_claims.status', '=', 'upheld').where('videos.owner_user_id', 'in', owners).groupBy('videos.owner_user_id').execute()
+    : [];
+  const strikeMap = new Map(strikes.map((s) => [s.owner_user_id, Number(s.n)]));
+  const claimMap = new Map<string, z.input<typeof CopyrightClaimView>[]>();
+  for (const cl of claims) {
+    (claimMap.get(cl.video_id) ?? claimMap.set(cl.video_id, []).get(cl.video_id)!).push({
+      id: cl.id, claimantName: cl.claimant_name, claimantEmail: cl.claimant_email, description: cl.description, status: cl.status as never, createdAt: cl.created_at.toISOString(),
+    });
+  }
+  const noticeMap = new Map<string, z.input<typeof CounterNoticeView>>();
+  for (const n of notices) {
+    if (!noticeMap.has(n.video_id)) noticeMap.set(n.video_id, { id: n.id, fullName: n.full_name, explanation: n.explanation, status: n.status as never, createdAt: n.created_at.toISOString() });
+  }
+  return {
+    claims: claimMap,
+    notices: noticeMap,
+    strikesFor: (kind: string, id: string) => {
+      const owner = kind === 'organization' ? undefined : ownerOf.get(id);
+      return owner ? (strikeMap.get(owner) ?? 0) : null;
+    },
+  };
 }
 
 const StatusReason = {
@@ -74,6 +132,7 @@ export const moderationRoutes = [
       ]);
       const videos = new Map((await toVideoViews(ctx.deps, me, videoRows)).map((v) => [v.id, v]));
       const commentMap = new Map(comments.map((c) => [c.id, c]));
+      const copyright = await copyrightContext(ctx.deps.db, cases);
       return {
         items: cases.map((c) => ({
           id: c.id, targetKind: c.target_kind as never, targetId: c.target_id, source: c.source as never, categories: c.categories,
@@ -81,6 +140,9 @@ export const moderationRoutes = [
           decision: c.decision, createdAt: c.created_at.toISOString(),
           video: videos.get(c.target_id) ?? null,
           comment: commentMap.has(c.target_id) ? { id: c.target_id, body: commentMap.get(c.target_id)!.body, authorHandle: commentMap.get(c.target_id)!.handle } : null,
+          copyrightClaims: copyright.claims.get(c.target_id) ?? [],
+          counterNotice: copyright.notices.get(c.target_id) ?? null,
+          ownerCopyrightStrikes: copyright.strikesFor(c.target_kind, c.target_id),
         })),
       };
     },
@@ -134,6 +196,7 @@ export const moderationRoutes = [
         if (c.target_kind === 'user' && (decision === 'restrict' || decision === 'remove' || decision === 'reject')) {
           await tx.updateTable('users').set({ status: 'suspended' }).where('id', '=', c.target_id).where('status', '=', 'active').execute();
         }
+        if (c.target_kind === 'video') await settleCopyright(tx, c.target_id, decision, now);
         await tx.updateTable('moderation_cases').set({
           status: decision === 'dismiss' ? 'dismissed' : 'actioned', decision, decided_by: me.userId, decision_note: note ?? null, decided_at: now,
         }).where('id', '=', c.id).execute();

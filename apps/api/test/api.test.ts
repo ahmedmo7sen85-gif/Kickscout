@@ -44,7 +44,7 @@ async function staff(sub: string, handle: string, role: 'admin' | 'moderator', m
 }
 
 async function startUpload(token: string, extra: Json = {}) {
-  return call('POST', '/v1/uploads', { token, body: { contentType: 'video/mp4', sizeBytes: 1000, title: 'Elastico in the cage', skillKey: 'elastico', position: 'LW', foot: 'left', hashtags: ['#Skills', 'cairo'], ...extra } });
+  return call('POST', '/v1/uploads', { token, body: { contentType: 'video/mp4', sizeBytes: 1000, title: 'Elastico in the cage', skillKey: 'elastico', position: 'LW', foot: 'left', hashtags: ['#Skills', 'cairo'], rightsConfirmed: true, ...extra } });
 }
 
 /** Uploads and completes a video, leaving it `processing` with a queued job, as the worker would find it. */
@@ -639,7 +639,7 @@ describe('search, discover, Talent Radar and challenges', () => {
   it('builds the Discover page', async () => {
     const d = await call('GET', '/v1/discover');
     expect(d.status).toBe(200);
-    expect(d.body.skills).toHaveLength(20);
+    expect(d.body.skills).toHaveLength(31);
     expect(d.body.skills.find((s: Json) => s.key === 'nutmeg').videos).toBeGreaterThanOrEqual(2);
     expect(d.body.trendingHashtags.map((h: Json) => h.tag)).toContain('nutmegchallenge');
     expect(d.body.risingPlayers.map((p: Json) => p.handle)).toContain('nutmeg_king');
@@ -666,7 +666,7 @@ describe('search, discover, Talent Radar and challenges', () => {
 
   it('lists the skill taxonomy in English and Arabic', async () => {
     const s = await call('GET', '/v1/skills');
-    expect(s.body.items).toHaveLength(20);
+    expect(s.body.items).toHaveLength(31);
     expect(s.body.items[0]).toEqual({ key: 'dribbling', category: 'dribbling', name: { en: 'Dribbling', ar: 'المراوغة' } });
   });
 
@@ -692,5 +692,335 @@ describe('demo seed', () => {
     expect(v.body.items.every((x: Json) => x.tags.every((t: Json) => t.source === 'user'))).toBe(true);
     const ch = await call('GET', '/v1/challenges/freestyle-challenge');
     expect(ch.body.isDemo).toBe(true);
+  });
+});
+
+// -------------------------------------------------------------------------------------------- phase B: taxonomy
+describe('extended taxonomy', () => {
+  it('accepts wing-back and forward, the new skills and the new video categories, and keeps old values valid', async () => {
+    const p = await newUser('tax-1', 'tax_player');
+    const prof = await call('PATCH', `/v1/profiles/${p.userId}`, { token: p.token, body: { player: { primaryPosition: 'WB', secondaryPositions: ['FW', 'LB'] } } });
+    expect(prof.body.player).toMatchObject({ primaryPosition: 'WB', secondaryPositions: ['FW', 'LB'] });
+    const id = await publishedVideo(p.token, { position: 'FW', skillKey: 'la_croqueta', context: 'goal' });
+    const v = await call('GET', `/v1/videos/${id}`);
+    expect(v.body).toMatchObject({ position: 'FW', skill: 'la_croqueta', context: 'goal' });
+    expect(v.body.tags[0]).toMatchObject({ skill: 'la_croqueta', name: { en: 'La Croqueta', ar: 'لا كروكيتا' } });
+    expect((await startUpload(p.token, { context: 'other' })).status).toBe(201);
+    expect((await startUpload(p.token, { context: 'highlight_reel' })).body.code).toBe('VALIDATION_FAILED');
+    const skills = (await call('GET', '/v1/skills')).body.items.map((s: Json) => s.key);
+    expect(skills).toEqual(expect.arrayContaining(['through_ball', 'long_range_shooting', 'finishing', 'acceleration', 'tackling', 'interception',
+      'reflexes', 'ball_mastery', 'skill_combo', 'match_highlight', 'la_croqueta', 'elastico']));
+  });
+});
+
+// -------------------------------------------------------------------------------------------- phase B: upload declaration
+describe('upload ownership declaration', () => {
+  it('rejects an upload without the rights confirmation and records when it was given', async () => {
+    const p = await newUser('rights-1', 'rights_player');
+    const missing = await startUpload(p.token, { rightsConfirmed: undefined });
+    expect(missing.body.code).toBe('VALIDATION_FAILED');
+    expect(missing.body.errors.map((e: Json) => e.path)).toContain('rightsConfirmed');
+    expect((await startUpload(p.token, { rightsConfirmed: false })).body.code).toBe('VALIDATION_FAILED');
+    const ok = await startUpload(p.token);
+    expect(ok.status).toBe(201);
+    const row = await env.db.selectFrom('videos').select('rights_confirmed_at').where('id', '=', ok.body.videoId).executeTakeFirstOrThrow();
+    expect(row.rights_confirmed_at).toBeInstanceOf(Date);
+  });
+});
+
+// -------------------------------------------------------------------------------------------- phase B: privacy
+describe('privacy controls and discovery', () => {
+  let scout: User;
+  let open: User & { videoId: string };
+  let unlisted: User;
+  let hiddenFromScouts: User;
+  let unlistedVideo: string;
+  let noDiscoveryVideo: string;
+
+  /** A player with a published clip and enough fresh engagement to qualify for Talent Radar. */
+  async function risingPlayer(sub: string, handle: string) {
+    const u = await newUser(sub, handle);
+    await call('PATCH', `/v1/profiles/${u.userId}`, { token: u.token, body: { regionCode: 'EG', player: { primaryPosition: 'WB', preferredFoot: 'left' } } });
+    const videoId = await publishedVideo(u.token, { title: `${handle} overlap run`, skillKey: 'through_ball', position: 'WB' });
+    for (let i = 0; i < 6; i++) {
+      const f = await newUser(`${sub}-fan-${i}`, `${handle}_f${i}`, ['fan']);
+      await call('PUT', `/v1/videos/${videoId}/like`, { token: f.token });
+      await call('PUT', `/v1/users/${u.userId}/follow`, { token: f.token });
+    }
+    return { ...u, videoId };
+  }
+
+  beforeAll(async () => {
+    scout = await newUser('priv-scout', 'priv_scout', ['fan']);
+    await env.db.insertInto('user_roles').values({ user_id: scout.userId, role: 'scout' }).execute();
+    open = await risingPlayer('priv-open', 'wb_open');
+    const u = await risingPlayer('priv-unlisted', 'wb_unlisted');
+    unlisted = u;
+    unlistedVideo = u.videoId;
+    const d = await risingPlayer('priv-nodisc', 'wb_nodisc');
+    hiddenFromScouts = d;
+    noDiscoveryVideo = d.videoId;
+    expect((await call('PATCH', `/v1/users/${unlisted.userId}/privacy`, { token: unlisted.token, body: { profileVisibility: 'unlisted' } })).body.profileVisibility).toBe('unlisted');
+    expect((await call('PATCH', `/v1/users/${d.userId}/privacy`, { token: d.token, body: { allowScoutDiscovery: false } })).body.allowScoutDiscovery).toBe(false);
+  });
+
+  it('never lists an unlisted or scout-discovery-off player in search, Discover, Talent Radar or scout search', async () => {
+    const hidden = ['wb_unlisted', 'wb_nodisc'];
+    for (const token of [undefined, scout.token]) {
+      const search = await call('GET', '/v1/search?q=wb_&type=players&limit=50', { token });
+      expect(search.body.players.map((p: Json) => p.handle)).toContain('wb_open');
+      expect(search.body.players.map((p: Json) => p.handle)).not.toEqual(expect.arrayContaining([expect.stringMatching(/wb_(unlisted|nodisc)/)]));
+      const discover = await call('GET', '/v1/discover', { token });
+      const rising = discover.body.risingPlayers.map((p: Json) => p.handle);
+      expect(rising).toContain('wb_open');
+      for (const h of hidden) expect(rising).not.toContain(h);
+      const radar = (await call('GET', '/v1/radar?position=WB&limit=50', { token })).body.items.map((e: Json) => e.player.handle);
+      expect(radar).toContain('wb_open');
+      for (const h of hidden) expect(radar).not.toContain(h);
+      for (const tab of ['for_you', 'trending']) {
+        expect((await call('GET', `/v1/feed?tab=${tab}&limit=50`, { token })).body.items.map((v: Json) => v.id)).not.toContain(unlistedVideo);
+      }
+      expect((await call('GET', '/v1/search?q=overlap&type=videos&limit=50', { token })).body.videos.map((v: Json) => v.id)).not.toContain(unlistedVideo);
+      expect(discover.body.latest.map((v: Json) => v.id)).not.toContain(unlistedVideo);
+    }
+    const scoutSearch = await call('GET', '/v1/scout/players?position=WB&limit=50', { token: scout.token });
+    expect(scoutSearch.body.items.map((p: Json) => p.handle)).toContain('wb_open');
+    for (const h of hidden) expect(scoutSearch.body.items.map((p: Json) => p.handle)).not.toContain(h);
+    // Scout actions are closed too.
+    const list = await call('POST', '/v1/scout/shortlists', { token: scout.token, body: { name: 'Wing-backs' } });
+    for (const p of [unlisted, hiddenFromScouts]) {
+      expect((await call('PUT', `/v1/scout/shortlists/${list.body.id}/players/${p.userId}`, { token: scout.token })).status).toBe(404);
+      expect((await call('POST', `/v1/scout/players/${p.userId}/contact`, { token: scout.token, body: { message: 'Hello, we run trials next month.' } })).status).toBe(404);
+    }
+    expect((await call('GET', '/v1/profiles/wb_nodisc', { token: scout.token })).body.canRequestContact).toBe(false);
+    // A discovery-off player still posts publicly: their clips stay in the feed.
+    expect((await call('GET', '/v1/feed?tab=for_you&limit=50')).body.items.map((v: Json) => v.id)).toContain(noDiscoveryVideo);
+  });
+
+  it('still opens an unlisted profile and its clips by direct link', async () => {
+    expect((await call('GET', '/v1/profiles/wb_unlisted')).status).toBe(200);
+    expect((await call('GET', `/v1/videos/${unlistedVideo}`)).status).toBe(200);
+    expect((await call('GET', '/v1/profiles/wb_unlisted/videos')).body.items.map((v: Json) => v.id)).toEqual([unlistedVideo]);
+  });
+
+  it('hides country and age where the player turned them off, including from filters', async () => {
+    await call('PATCH', `/v1/users/${open.userId}/privacy`, { token: open.token, body: { showCountry: false, showAge: false } });
+    const asScout = await call('GET', '/v1/profiles/wb_open', { token: scout.token });
+    expect(asScout.body).toMatchObject({ ageGroup: null, region: { country: null, city: null } });
+    expect((await call('GET', '/v1/profiles/wb_open', { token: open.token })).body.region.country).toBe('EG');
+    expect((await call('GET', '/v1/search?type=players&country=EG&position=WB')).body.players.map((p: Json) => p.handle)).not.toContain('wb_open');
+    expect((await call('GET', '/v1/scout/players?position=WB&ageGroup=adult', { token: scout.token })).body.items.map((p: Json) => p.handle)).not.toContain('wb_open');
+    const card = (await call('GET', '/v1/scout/players?position=WB', { token: scout.token })).body.items.find((p: Json) => p.handle === 'wb_open');
+    expect(card).toMatchObject({ country: null, ageGroup: null });
+    expect((await call('GET', `/v1/videos/${open.videoId}`)).body.country).toBeNull();
+    await call('PATCH', `/v1/users/${open.userId}/privacy`, { token: open.token, body: { showCountry: true, showAge: true } });
+  });
+
+  it('refuses contact requests when the player turned them off, even with the scout-contact consent', async () => {
+    const msg = { message: 'We would like to invite you to an open trial.' };
+    await grant(open.token, open.userId, 'scout_contact');
+    await call('PATCH', `/v1/users/${open.userId}/privacy`, { token: open.token, body: { allowContactRequests: false } });
+    expect((await call('GET', '/v1/profiles/wb_open', { token: scout.token })).body.canRequestContact).toBe(false);
+    expect((await call('POST', `/v1/scout/players/${open.userId}/contact`, { token: scout.token, body: msg })).body.code).toBe('CONTACT_NOT_ALLOWED');
+    await call('PATCH', `/v1/users/${open.userId}/privacy`, { token: open.token, body: { allowContactRequests: true } });
+    expect((await call('POST', `/v1/scout/players/${open.userId}/contact`, { token: scout.token, body: msg })).status).toBe(202);
+  });
+
+  it('keeps settings private to the user, their guardian and admins', async () => {
+    expect((await call('GET', `/v1/users/${open.userId}/privacy`, { token: scout.token })).status).toBe(404);
+    expect((await call('PATCH', `/v1/users/${open.userId}/privacy`, { token: scout.token, body: { profileVisibility: 'private' } })).status).toBe(404);
+    expect((await call('GET', `/v1/users/${open.userId}/privacy`, { token: open.token })).body).toMatchObject({ minorProtections: false, allowScoutDiscovery: true });
+  });
+
+  it('never lets a toggle loosen a minor’s protections', async () => {
+    const k = await registerUser('priv-kid', minor('priv_kid'));
+    const g = await registerUser('priv-guardian', adult('priv_parent', ['fan']), { email: 'priv.parent@example.com', email_verified: true });
+    await call('POST', '/v1/guardians/invitations', { token: k.token, body: { guardianEmail: 'priv.parent@example.com' } });
+    await call('POST', '/v1/guardians/invitations/accept', { token: g.token, body: { token: env.mailer.invitations.at(-1)!.token } });
+    await grant(g.token, k.userId, 'account');
+    const settings = await call('GET', `/v1/users/${k.userId}/privacy`, { token: k.token });
+    expect(settings.body).toMatchObject({ profileVisibility: 'private', comments: 'followers', minorProtections: true });
+    // Without the guardian's public-profile consent, nobody can open the profile, not even the guardian.
+    expect((await call('PATCH', `/v1/users/${k.userId}/privacy`, { token: k.token, body: { profileVisibility: 'unlisted' } })).body.code).toBe('GUARDIAN_REQUIRED');
+    expect((await call('PATCH', `/v1/users/${k.userId}/privacy`, { token: g.token, body: { profileVisibility: 'public' } })).body.code).toBe('GUARDIAN_REQUIRED');
+    // The minor can tighten, but only the guardian can loosen again.
+    expect((await call('PATCH', `/v1/users/${k.userId}/privacy`, { token: k.token, body: { showAge: false, comments: 'off' } })).status).toBe(200);
+    expect((await call('PATCH', `/v1/users/${k.userId}/privacy`, { token: k.token, body: { showAge: true } })).body.code).toBe('GUARDIAN_REQUIRED');
+    expect((await call('PATCH', `/v1/users/${k.userId}/privacy`, { token: g.token, body: { showAge: true } })).body.showAge).toBe(true);
+    await grant(g.token, k.userId, 'public_profile');
+    // Turning on city precision never shows a minor's city to the public.
+    await call('PATCH', `/v1/profiles/${k.userId}`, { token: g.token, body: { regionCode: 'EG-cairo' } });
+    await call('PATCH', `/v1/users/${k.userId}/privacy`, { token: g.token, body: { regionPrecision: 'city' } });
+    expect((await call('GET', '/v1/profiles/priv_kid')).body).toMatchObject({ ageGroup: null, region: { city: null } });
+  });
+});
+
+// -------------------------------------------------------------------------------------------- phase B: notifications
+describe('notification preferences', () => {
+  it('stops a switched-off kind and keeps the rest, and security alerts cannot be turned off', async () => {
+    const p = await newUser('np-player', 'np_player');
+    const f = await newUser('np-fan', 'np_fan', ['fan']);
+    const prefs = await call('GET', '/v1/me/notification-preferences', { token: p.token });
+    expect(prefs.body).toMatchObject({ like: true, follower: true, scoutContact: true, security: true });
+    expect((await call('PATCH', '/v1/me/notification-preferences', { token: p.token, body: { like: false } })).body).toMatchObject({ like: false, follower: true });
+    expect((await call('PATCH', '/v1/me/notification-preferences', { token: p.token, body: { security: false } })).body.code).toBe('VALIDATION_FAILED');
+    const videoId = await publishedVideo(p.token);
+    await call('PUT', `/v1/videos/${videoId}/like`, { token: f.token });
+    await call('PUT', `/v1/users/${p.userId}/follow`, { token: f.token });
+    const kinds = (await call('GET', '/v1/notifications', { token: p.token })).body.items.map((n: Json) => n.kind);
+    expect(kinds).toContain('follow');
+    expect(kinds).not.toContain('like');
+  });
+});
+
+// -------------------------------------------------------------------------------------------- phase B: account
+describe('data export and account deletion', () => {
+  let a: User;
+  let b: User;
+  let aVideo: string;
+  let bVideo: string;
+  beforeAll(async () => {
+    a = (await registerUser('acct-a', adult('acct_a'), { email: 'acct.a@example.com', email_verified: true })) as User;
+    b = (await registerUser('acct-b', adult('acct_b'), { email: 'acct.b@example.com', email_verified: true })) as User;
+    aVideo = await publishedVideo(a.token, { title: 'A clip' });
+    bVideo = await publishedVideo(b.token, { title: 'B clip' });
+    await call('POST', `/v1/videos/${bVideo}/comments`, { token: a.token, body: { body: 'comment-from-a on b' } });
+    await call('POST', `/v1/videos/${aVideo}/comments`, { token: b.token, body: { body: 'comment-from-b on a' } });
+    await call('PUT', `/v1/videos/${bVideo}/like`, { token: a.token });
+    await call('PUT', `/v1/videos/${bVideo}/save`, { token: a.token });
+    await call('PUT', `/v1/users/${b.userId}/follow`, { token: a.token });
+    await call('PUT', `/v1/users/${a.userId}/follow`, { token: b.token });
+  });
+
+  it('exports the caller’s own data and nothing private about anyone else', async () => {
+    const res = await call('GET', '/v1/me/export', { token: a.token });
+    expect(res.status).toBe(200);
+    const e = res.body;
+    expect(e.account).toMatchObject({ userId: a.userId, email: 'acct.a@example.com', dateOfBirth: '1995-04-02', ageGroup: 'adult' });
+    expect(e.profile.handle).toBe('acct_a');
+    expect(e.settings.privacy).toMatchObject({ profileVisibility: 'public' });
+    expect(e.settings.notifications.security).toBe(true);
+    expect(e.consents.map((c: Json) => c.purpose).sort()).toEqual(['account', 'public_profile']);
+    expect(e.videos.map((v: Json) => v.id)).toEqual([aVideo]);
+    expect(e.videos[0].rightsConfirmedAt).toBeTruthy();
+    expect(e.comments.map((c: Json) => c.body)).toEqual(['comment-from-a on b']);
+    expect(e.following).toMatchObject([{ userId: b.userId, handle: 'acct_b' }]);
+    expect(e.followers).toEqual({ count: 1 });
+    expect(e.likes.map((l: Json) => l.videoId)).toEqual([bVideo]);
+    expect(e.saves.map((l: Json) => l.videoId)).toEqual([bVideo]);
+    expect(e.notifications.length).toBeGreaterThan(0);
+    const text = JSON.stringify(e);
+    expect(text).not.toContain('acct.b@example.com');
+    expect(text).not.toContain('comment-from-b');
+    const log = await env.db.selectFrom('audit_logs').select('action').where('target_id', '=', a.userId).where('action', '=', 'account.exported').execute();
+    expect(log).toHaveLength(1);
+  });
+
+  it('requires an explicit confirmation, then removes the account and its videos from every public surface', async () => {
+    expect((await call('DELETE', '/v1/me', { token: a.token, body: {} })).body.code).toBe('VALIDATION_FAILED');
+    expect((await call('DELETE', '/v1/me', { token: a.token, body: { confirm: 'yes' } })).body.code).toBe('VALIDATION_FAILED');
+    expect((await call('DELETE', '/v1/me', { token: a.token, body: { confirm: 'DELETE' } })).body).toEqual({ status: 'deleted' });
+
+    expect((await call('GET', '/v1/profiles/acct_a')).status).toBe(404);
+    expect((await call('GET', `/v1/videos/${aVideo}`)).status).toBe(404);
+    expect((await call('GET', '/v1/profiles/acct_a/videos')).body.items ?? []).toEqual([]);
+    expect((await call('GET', '/v1/feed?tab=for_you&limit=50')).body.items.map((v: Json) => v.id)).not.toContain(aVideo);
+    expect((await call('GET', '/v1/search?q=acct_a&type=players')).body.players).toEqual([]);
+    expect((await call('GET', '/v1/discover')).body.latest.map((v: Json) => v.id)).not.toContain(aVideo);
+    // Their follows, likes, saves and comments no longer show on anyone else's content.
+    const bView = await call('GET', `/v1/videos/${bVideo}`);
+    expect(bView.body).toMatchObject({ likes: 0, saves: 0, comments: 0 });
+    expect((await call('GET', `/v1/videos/${bVideo}/comments`)).body.items).toEqual([]);
+    expect((await call('GET', '/v1/profiles/acct_b')).body.stats).toMatchObject({ followers: 0, following: 0 });
+    // The account can do nothing further, and the deletion is in the audit log.
+    expect((await call('GET', '/v1/me', { token: a.token })).status).toBe(404);
+    expect((await startUpload(a.token)).body.code).toBe('ACCOUNT_INACTIVE');
+    const log = await env.db.selectFrom('audit_logs').select(['action', 'metadata']).where('target_id', '=', a.userId).where('action', '=', 'account.deleted').executeTakeFirstOrThrow();
+    expect(log.metadata).toMatchObject({ by: 'self', videos: 1 });
+    expect((await env.db.selectFrom('users').select(['status', 'email']).where('id', '=', a.userId).executeTakeFirstOrThrow())).toEqual({ status: 'deleted', email: null });
+  });
+
+  it('does not let a minor bypass their guardian: the account is hidden until the guardian confirms', async () => {
+    const k = await registerUser('del-kid', minor('del_kid'));
+    const g = await registerUser('del-guardian', adult('del_parent', ['fan']), { email: 'del.parent@example.com', email_verified: true });
+    await call('POST', '/v1/guardians/invitations', { token: k.token, body: { guardianEmail: 'del.parent@example.com' } });
+    await call('POST', '/v1/guardians/invitations/accept', { token: g.token, body: { token: env.mailer.invitations.at(-1)!.token } });
+    await grant(g.token, k.userId, 'account');
+    await grant(g.token, k.userId, 'public_profile');
+    expect((await call('GET', '/v1/profiles/del_kid')).status).toBe(200);
+
+    expect((await call('DELETE', '/v1/me', { token: k.token, body: { confirm: 'DELETE' } })).body).toEqual({ status: 'pending_guardian' });
+    expect((await call('GET', '/v1/profiles/del_kid')).status).toBe(404);
+    expect((await call('GET', '/v1/me', { token: k.token })).body.status).toBe('active');
+    expect((await call('GET', '/v1/notifications', { token: g.token })).body.items.map((n: Json) => n.kind)).toContain('account.deletion_requested');
+    const stranger = await newUser('del-stranger', 'del_stranger', ['fan']);
+    expect((await call('DELETE', `/v1/users/${k.userId}/account`, { token: stranger.token, body: { confirm: 'DELETE' } })).status).toBe(403);
+    expect((await call('DELETE', `/v1/users/${k.userId}/account`, { token: g.token, body: { confirm: 'DELETE' } })).body).toEqual({ status: 'deleted' });
+    expect((await env.db.selectFrom('users').select('status').where('id', '=', k.userId).executeTakeFirstOrThrow()).status).toBe('deleted');
+  });
+});
+
+// -------------------------------------------------------------------------------------------- phase B: copyright
+describe('copyright takedowns and counter-notices', () => {
+  let admin: User;
+  let uploader: User;
+  let videoId: string;
+  const claim = (video: string) => ({
+    claimantName: 'Nile Media Rights', email: 'rights@nilemedia.example', video,
+    description: 'This is our broadcast footage of the 2025 cup final, used without permission.', goodFaith: true, accurate: true,
+  });
+  const caseFor = async (id: string, status = 'open') =>
+    (await call('GET', `/v1/admin/moderation-cases?status=${status}`, { token: admin.token })).body.items.find((c: Json) => c.targetId === id);
+
+  beforeAll(async () => {
+    admin = await staff('admin-copy', 'admin_copy', 'admin');
+    uploader = await newUser('copy-up', 'copy_uploader');
+    videoId = await publishedVideo(uploader.token, { title: 'Cup final goal' });
+  });
+
+  it('accepts a public takedown request and opens a priority case', async () => {
+    expect((await call('POST', '/v1/copyright/takedowns', { body: { ...claim(videoId), goodFaith: false } })).body.code).toBe('VALIDATION_FAILED');
+    expect((await call('POST', '/v1/copyright/takedowns', { body: claim('https://kickscout.test/v/not-a-video') })).body.code).toBe('VIDEO_REQUIRED');
+    expect((await call('POST', '/v1/copyright/takedowns', { body: claim(crypto.randomUUID()) })).status).toBe(404);
+    const r = await call('POST', '/v1/copyright/takedowns', { body: claim(`https://kickscout.test/v/${videoId}`) });
+    expect(r.status).toBe(202);
+    expect(r.body.status).toBe('received');
+    const c = await caseFor(videoId);
+    expect(c).toMatchObject({ source: 'copyright', categories: ['copyright'], priority: 1, ownerCopyrightStrikes: 0 });
+    expect(c.copyrightClaims).toMatchObject([{ claimantName: 'Nile Media Rights', claimantEmail: 'rights@nilemedia.example', status: 'open' }]);
+  });
+
+  it('counts an upheld claim against the uploader, and a counter-notice can restore the video', async () => {
+    const c = await caseFor(videoId);
+    await call('POST', `/v1/admin/moderation-cases/${c.id}/decision`, { token: admin.token, body: { decision: 'remove' } });
+    expect((await call('GET', `/v1/videos/${videoId}`)).status).toBe(404);
+
+    // A second claim on another clip by the same uploader shows the repeat-infringer count.
+    const second = await publishedVideo(uploader.token, { title: 'Another final clip' });
+    await call('POST', '/v1/copyright/takedowns', { body: claim(second) });
+    expect((await caseFor(second)).ownerCopyrightStrikes).toBe(1);
+
+    const notice = { fullName: 'Copy Uploader', explanation: 'I filmed this myself from the stands; it is not broadcast footage.', goodFaith: true };
+    const other = await newUser('copy-other', 'copy_other');
+    expect((await call('POST', `/v1/videos/${videoId}/counter-notice`, { token: other.token, body: notice })).status).toBe(404);
+    expect((await call('POST', `/v1/videos/${second}/counter-notice`, { token: uploader.token, body: notice })).body.code).toBe('NOT_REMOVED_FOR_COPYRIGHT');
+    expect((await call('POST', `/v1/videos/${videoId}/counter-notice`, { token: uploader.token, body: notice })).status).toBe(202);
+    expect((await call('POST', `/v1/videos/${videoId}/counter-notice`, { token: uploader.token, body: notice })).body.code).toBe('ALREADY_PENDING');
+
+    const appeal = await caseFor(videoId);
+    expect(appeal).toMatchObject({ source: 'appeal', categories: ['copyright_counter_notice'], counterNotice: { fullName: 'Copy Uploader', status: 'pending' } });
+    await call('POST', `/v1/admin/moderation-cases/${appeal.id}/decision`, { token: admin.token, body: { decision: 'approve' } });
+    expect((await call('GET', `/v1/videos/${videoId}`)).body.status).toBe('published');
+    const claims = await env.db.selectFrom('copyright_claims').select('status').where('video_id', '=', videoId).execute();
+    expect(claims.map((x) => x.status)).toEqual(['reversed']);
+    expect((await caseFor(second)).ownerCopyrightStrikes).toBe(0);
+  });
+
+  it('lets anyone report a scout, ahead of ordinary reports', async () => {
+    const s = await newUser('copy-scout', 'pretend_scout', ['fan']);
+    await env.db.insertInto('user_roles').values({ user_id: s.userId, role: 'scout' }).execute();
+    const reporter = await newUser('copy-reporter', 'copy_reporter');
+    expect((await call('POST', '/v1/reports', { token: reporter.token, body: { targetKind: 'user', targetId: s.userId, reason: 'fake_scout', details: 'Asked for a trial fee.' } })).status).toBe(202);
+    expect(await caseFor(s.userId)).toMatchObject({ targetKind: 'user', categories: ['fake_scout'], priority: 1, ownerCopyrightStrikes: 0 });
   });
 });

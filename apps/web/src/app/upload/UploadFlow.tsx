@@ -55,6 +55,7 @@ export function UploadFlow() {
   const [tagDraft, setTagDraft] = useState('');
   const [tagError, setTagError] = useState<string | null>(null);
   const [visibility, setVisibility] = useState<Visibility>('public');
+  const [rightsConfirmed, setRightsConfirmed] = useState(false);
   const [phase, setPhase] = useState<Phase>({ kind: 'edit' });
   const previewRef = useRef<HTMLVideoElement>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -128,8 +129,9 @@ export function UploadFlow() {
   const trimmed = durationMs !== null && (trim[0] > 0 || trim[1] < durationMs);
 
   const publish = async () => {
-    if (!file || !contentType) return;
+    if (!file || !contentType || !rightsConfirmed) return;
     const body: CreateUploadRequest = {
+      rightsConfirmed: true,
       contentType,
       sizeBytes: file.size,
       title: title.trim(),
@@ -175,7 +177,7 @@ export function UploadFlow() {
 
   const reset = () => {
     setStep(1); setFile(null); setUrl(null); setDurationMs(null); setTrim([0, 0]); setTitle(''); setDescription('');
-    setSkill(''); setFoot(''); setHashtags([]); setVisibility('public'); setPhase({ kind: 'edit' });
+    setSkill(''); setFoot(''); setHashtags([]); setVisibility('public'); setRightsConfirmed(false); setPhase({ kind: 'edit' });
   };
 
   if (phase.kind !== 'edit') {
@@ -361,7 +363,17 @@ export function UploadFlow() {
               <dt>{t.upload.summaryHashtags}</dt><dd dir="auto">{hashtags.length ? hashtags.map((h) => `#${h}`).join(' ') : t.upload.none}</dd>
               <dt>{t.upload.summaryPrivacy}</dt><dd>{t.visibility[visibility]}</dd>
               <dt>{t.upload.summaryTrim}</dt><dd>{trimmed ? `${formatDuration(trim[0])} – ${formatDuration(trim[1])}` : t.upload.none}</dd>
+              <dt>{t.upload.summaryContext}</dt><dd>{context ? t.contexts[context] : t.upload.none}</dd>
             </dl>
+            <fieldset className="stack stack--tight" style={{ border: 0, padding: 0, margin: 0 }}>
+              <legend className="field__label">{t.upload.rightsTitle}</legend>
+              <label className={`check-row${rightsConfirmed ? ' is-checked' : ''}`}>
+                <input type="checkbox" checked={rightsConfirmed} onChange={(e) => setRightsConfirmed(e.target.checked)} data-testid="rights-confirm" />
+                <span>{t.upload.rightsLabel}</span>
+              </label>
+              <span className="field__hint">{t.upload.rightsHint} <a className="link" href="/legal/copyright">{t.legal.copyright}</a></span>
+              {!rightsConfirmed ? <span className="small muted">{t.upload.rightsRequired}</span> : null}
+            </fieldset>
             <p className="field__hint">{t.upload.checksNote}</p>
             {authStatus === 'signed_out' ? <p className="notice notice--warn">{t.upload.loginRequired} <a className="link" href="/login">{t.common.logIn}</a></p> : null}
             {me && !isPlayer ? <p className="notice notice--warn">{t.upload.playerRoleRequired}</p> : null}
@@ -376,7 +388,7 @@ export function UploadFlow() {
           {step < TOTAL ? (
             <Button variant="primary" onClick={() => setStep((s) => Math.min(TOTAL, s + 1))} disabled={!canNext[step]}>{t.common.next}</Button>
           ) : (
-            <Button variant="primary" size="lg" onClick={publish} disabled={authStatus !== 'signed_in' || !file || !contentType}>{t.upload.publish}</Button>
+            <Button variant="primary" size="lg" onClick={publish} disabled={authStatus !== 'signed_in' || !file || !contentType || !rightsConfirmed}>{t.upload.publish}</Button>
           )}
         </div>
       </div>

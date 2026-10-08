@@ -52,7 +52,8 @@ export const scoutRoutes = [
       let q = filterPlayers(discoverablePlayers(ctx.deps, ctx.actor), f)
         .innerJoin('age_records', 'age_records.user_id', 'users.id')
         .select(['users.id', 'profiles.handle']);
-      if (f.ageGroup) q = q.where('age_records.age_band', '=', f.ageGroup);
+      // A hidden age group cannot be found by filtering on it either.
+      if (f.ageGroup) q = q.where('age_records.age_band', '=', f.ageGroup).where('privacy_settings.show_age', '=', true);
       if (f.verifiedOnly) q = q.where('profiles.verified_at', 'is not', null);
       if (f.minFollowers) {
         q = q.where((eb) => eb(eb.selectFrom('follows').select(eb.fn.countAll().as('n')).whereRef('followee_id', '=', 'users.id'), '>=', f.minFollowers!));
@@ -170,8 +171,12 @@ export const scoutRoutes = [
       const me = ctx.me();
       ctx.authorize({ kind: 'scout.use' });
       const playerId = await discoverablePlayer(ctx.deps, ctx, ctx.params.playerId);
-      const consents = await currentConsents(ctx.deps.db, playerId);
-      ctx.authorize({ kind: 'scout.contact', playerId, playerAcceptsContact: consents.has('scout_contact') });
+      const [consents, privacy] = await Promise.all([
+        currentConsents(ctx.deps.db, playerId),
+        ctx.deps.db.selectFrom('privacy_settings').select('allow_contact_requests').where('user_id', '=', playerId).executeTakeFirst(),
+      ]);
+      // Both must hold: the scout-contact consent (the guardian's, for a minor) and the player's own contact toggle.
+      ctx.authorize({ kind: 'scout.contact', playerId, playerAcceptsContact: consents.has('scout_contact') && privacy?.allow_contact_requests === true });
       const band = await ageBandOf(ctx.deps.db, playerId);
       let routedTo = playerId;
       if (!band || isMinor(band)) {

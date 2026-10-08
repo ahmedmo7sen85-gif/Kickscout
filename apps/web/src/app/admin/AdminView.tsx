@@ -17,6 +17,9 @@ import { useI18n } from '@/lib/i18n/provider';
 import { useApi } from '@/lib/useApi';
 import type { ModerationCaseView, ModerationDecisionRequest, SkillKey } from '@/lib/types';
 
+/** Upheld claims on this many distinct videos flag the owner as a repeat infringer (a prompt for review, not an automatic ban). */
+const REPEAT_INFRINGER_STRIKES = 3;
+
 /** Staff console. Hidden from non-staff as a convenience; the API enforces every permission. */
 export function AdminView() {
   const { t } = useI18n();
@@ -106,6 +109,33 @@ function Moderation() {
               ) : null}
               {c.comment ? <blockquote className="muted" dir="auto" style={{ margin: 0 }}>“{c.comment.body}” <span className="small">@{c.comment.authorHandle}</span></blockquote> : null}
               {!c.video && !c.comment ? <p className="mono muted">{c.targetId}</p> : null}
+              {c.ownerCopyrightStrikes ? (
+                <p className="row small" data-testid="copyright-strikes">
+                  {fmt(t.admin.strikes, { n: c.ownerCopyrightStrikes })}
+                  {c.ownerCopyrightStrikes >= REPEAT_INFRINGER_STRIKES ? <span className="badge badge--warn">{t.admin.repeatInfringer}</span> : null}
+                </p>
+              ) : null}
+              {c.copyrightClaims.length ? (
+                <details className="small">
+                  <summary>{t.admin.copyrightClaims} ({c.copyrightClaims.length})</summary>
+                  <ul className="list">
+                    {c.copyrightClaims.map((x) => (
+                      <li key={x.id}>
+                        <span dir="auto">{fmt(t.admin.claimBy, { name: x.claimantName, email: x.claimantEmail })}</span>{' '}
+                        <span className="badge badge--outline">{x.status}</span>
+                        <p className="muted" dir="auto" style={{ whiteSpace: 'pre-wrap', margin: 0 }}>{x.description}</p>
+                      </li>
+                    ))}
+                  </ul>
+                </details>
+              ) : null}
+              {c.counterNotice ? (
+                <details className="small" open={c.counterNotice.status === 'pending'}>
+                  <summary>{t.admin.counterNotice} · {c.counterNotice.status}</summary>
+                  <p dir="auto" style={{ margin: 0 }}><strong>{c.counterNotice.fullName}</strong></p>
+                  <p className="muted" dir="auto" style={{ whiteSpace: 'pre-wrap', margin: 0 }}>{c.counterNotice.explanation}</p>
+                </details>
+              ) : null}
               <time className="muted small" dateTime={c.createdAt}>{formatDate(c.createdAt)}</time>
               {c.status === 'open' ? (
                 <>

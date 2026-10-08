@@ -4,3 +4,4 @@ export * from './taxonomy.js';
 export * from './privacy.js';
 export * from './policy.js';
 export * from './radar.js';
+export * from './notifications.js';

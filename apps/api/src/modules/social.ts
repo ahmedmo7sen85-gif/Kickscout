@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { CommentPage, CommentView, CreateCommentRequest, CursorQuery, ReportRequest, VideoPage } from '@fp/contracts';
-import { isMinor } from '@fp/domain';
+import { isMinor, SAVE_MILESTONES } from '@fp/domain';
 import { route } from '../platform/route.js';
 import { ApiError, notFound } from '../platform/errors.js';
 import { newId } from '../platform/ids.js';
@@ -38,8 +38,14 @@ export const socialRoutes = [
     async (ctx) => {
       ctx.authorize({ kind: 'social.engage' });
       const { row } = await visibleVideo(ctx.deps, ctx.actor, ctx.params.videoId!);
-      await ctx.deps.db.insertInto('saves').values({ user_id: ctx.me().userId, video_id: row.id })
-        .onConflict((oc) => oc.columns(['user_id', 'video_id']).doNothing()).execute();
+      const me = ctx.me();
+      await ctx.deps.db.transaction().execute(async (tx) => {
+        const res = await tx.insertInto('saves').values({ user_id: me.userId, video_id: row.id })
+          .onConflict((oc) => oc.columns(['user_id', 'video_id']).doNothing()).returning('video_id').executeTakeFirst();
+        if (!res || row.owner_user_id === me.userId) return;
+        const { n } = await tx.selectFrom('saves').select(tx.fn.countAll<string>().as('n')).where('video_id', '=', row.id).executeTakeFirstOrThrow();
+        if ((SAVE_MILESTONES as readonly number[]).includes(Number(n))) await notify(tx, row.owner_user_id, 'save.milestone', { videoId: row.id, saves: Number(n) });
+      });
     },
   ),
   route(
@@ -103,8 +109,9 @@ export const socialRoutes = [
     async (ctx) => {
       const { row } = await visibleVideo(ctx.deps, ctx.actor, ctx.params.videoId!);
       const items = await ctx.deps.db.selectFrom('comments').innerJoin('profiles', 'profiles.user_id', 'comments.author_id')
+        .innerJoin('users', 'users.id', 'comments.author_id')
         .select(['comments.id', 'comments.body', 'comments.moderation', 'comments.created_at', 'comments.author_id', 'profiles.handle'])
-        .where('comments.video_id', '=', row.id).where('comments.moderation', '=', 'visible')
+        .where('comments.video_id', '=', row.id).where('comments.moderation', '=', 'visible').where('users.status', '!=', 'deleted')
         .orderBy('comments.created_at', 'desc').limit(50).execute();
       return {
         items: items.map((c) => ({ id: c.id, author: { userId: c.author_id, handle: c.handle }, body: c.body, status: c.moderation as never, createdAt: c.created_at.toISOString() })),
@@ -155,7 +162,8 @@ export const socialRoutes = [
       else if (targetKind === 'video') ownerId = (await ctx.deps.db.selectFrom('videos').select('owner_user_id').where('id', '=', targetId).executeTakeFirst())?.owner_user_id;
       else ownerId = (await ctx.deps.db.selectFrom('comments').select('author_id').where('id', '=', targetId).executeTakeFirst())?.author_id;
       const band = ownerId ? await ageBandOf(ctx.deps.db, ownerId) : null;
-      const priority = reason === 'child_safety' || (band && isMinor(band)) ? 0 : reason === 'violence' || reason === 'hate' ? 1 : 2;
+      const priority = reason === 'child_safety' || (band && isMinor(band)) ? 0
+        : reason === 'violence' || reason === 'hate' || reason === 'inappropriate_contact' || reason === 'fake_scout' ? 1 : 2;
 
       if (!ownerId) throw notFound(targetKind);
       await ctx.deps.db.transaction().execute(async (tx) => {
