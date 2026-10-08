@@ -197,7 +197,7 @@ function GuardianInvite() {
 function Verification({ me, onSent }: { me: MeView; onSent: () => Promise<void> }) {
   const { t, fmt } = useI18n();
   const toast = useToast();
-  const [kind, setKind] = useState<'scout' | 'player'>(me.roles.includes('player') ? 'player' : 'scout');
+  const [kind, setKind] = useState<'scout' | 'player' | 'identity'>(me.roles.includes('player') ? 'player' : 'scout');
   const [organization, setOrganization] = useState('');
   const [evidence, setEvidence] = useState('');
   const [busy, setBusy] = useState(false);
@@ -221,14 +221,14 @@ function Verification({ me, onSent }: { me: MeView; onSent: () => Promise<void> 
       <p className="small">{fmt(t.settings.scoutStatus, { status: statusText })}</p>
       <fieldset className="radio-list">
         <legend className="field__label">{t.settings.verificationKind}</legend>
-        {(['scout', 'player'] as const).map((k) => (
+        {(['scout', 'player', 'identity'] as const).map((k) => (
           <label key={k} className={`radio-row${kind === k ? ' is-checked' : ''}`}>
             <input type="radio" name="vkind" checked={kind === k} onChange={() => setKind(k)} />
-            {k === 'scout' ? t.settings.kindScout : t.settings.kindPlayer}
+            {k === 'scout' ? t.settings.kindScout : k === 'player' ? t.settings.kindPlayer : t.settings.kindIdentity}
           </label>
         ))}
       </fieldset>
-      <label className="field"><span className="field__label">{t.settings.organization}{kind === 'player' ? ` · ${t.common.optional}` : ''}</span>
+      <label className="field"><span className="field__label">{t.settings.organization}{kind !== 'scout' ? ` · ${t.common.optional}` : ''}</span>
         <input className="input" required={kind === 'scout'} minLength={2} maxLength={120} value={organization} onChange={(e) => setOrganization(e.target.value)} dir="auto" /></label>
       <label className="field"><span className="field__label">{t.settings.evidence}</span>
         <textarea className="input" required minLength={10} maxLength={1000} rows={4} value={evidence} onChange={(e) => setEvidence(e.target.value)} dir="auto" />

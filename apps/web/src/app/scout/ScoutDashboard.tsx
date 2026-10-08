@@ -5,6 +5,7 @@ import { useState, type FormEvent } from 'react';
 import { PageHead, Section } from '@/components/PageHead';
 import { PlayerCard } from '@/components/player/PlayerCard';
 import { ScoutActions } from '@/components/player/ScoutActions';
+import { SaveSearchForm } from '@/components/crm/SaveSearchForm';
 import { ComingSoonBadge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { SkeletonGrid, SkeletonList } from '@/components/ui/Skeleton';
@@ -104,6 +105,9 @@ function Dashboard() {
               <Button variant="ghost" onClick={() => { setDraft(EMPTY); setExtra(null); setQuery({}); }}>{t.common.clear}</Button>
             </div>
           </form>
+
+          <SaveSearchForm filters={query} />
+          <p className="small"><Link className="link" href="/scout/pipeline">{t.pipeline.open}</Link></p>
 
           <section className="card" aria-labelledby="sl-title">
             <h2 className="section-title" id="sl-title" style={{ fontSize: '1.1rem' }}>{t.scout.shortlists}</h2>

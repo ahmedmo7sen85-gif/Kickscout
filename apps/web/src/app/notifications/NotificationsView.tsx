@@ -18,8 +18,12 @@ import type { NotificationView } from '@/lib/types';
 const str = (v: unknown) => (typeof v === 'string' ? v : null);
 
 /** Notification payloads vary by kind; show the server's text when it sends one, otherwise the kind. */
-function describe(n: NotificationView, generic: string): { text: string; href: string | null } {
+function describe(n: NotificationView, generic: string, savedSearchMatch: string): { text: string; href: string | null } {
   const p = n.payload;
+  if (n.kind === 'saved_search.match') {
+    const org = str(p.organizationId);
+    return { text: savedSearchMatch.replace('{name}', str(p.name) ?? ''), href: org ? `/scout/pipeline?org=${encodeURIComponent(org)}` : '/scout/pipeline' };
+  }
   const text = str(p.text) ?? str(p.message) ?? str(p.title) ?? generic.replace('{kind}', n.kind.replace(/[._]/g, ' '));
   const videoId = str(p.videoId);
   const handle = str(p.handle) ?? str(p.actorHandle);
@@ -62,7 +66,7 @@ function List() {
       {unread ? <div><Button size="sm" onClick={markAll} loading={busy}>{t.notifications.markAllRead}</Button></div> : null}
       <ul className="list">
         {n.data.items.map((x) => {
-          const d = describe(x, t.notifications.generic);
+          const d = describe(x, t.notifications.generic, t.notifications.savedSearchMatch);
           return (
             <li key={x.id} className={`notif${x.read ? '' : ' is-unread'}`}>
               <div className="list__row">

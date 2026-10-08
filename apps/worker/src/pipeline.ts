@@ -13,6 +13,7 @@ import { decodeCheck, extractFrames, probe, sha256File, thumbnail, transcode, va
 import type { MediaTools, ProbeInfo, TrimWindow } from './media.js';
 import { playbackKey, thumbnailKey } from './storage/storage.js';
 import type { VideoStorage } from './storage/storage.js';
+import { runSavedSearchAlerts } from './alerts.js';
 
 export interface Logger {
   info(msg: string, fields?: Record<string, unknown>): void;
@@ -224,6 +225,10 @@ export async function processVideo(deps: PipelineDeps, videoId: string): Promise
       return true;
     });
     if (!applied) return { outcome: 'skipped', reason: 'video changed during analysis' };
+    if (decision.status === 'published') {
+      // Saved-search alerts for scouts. Best effort: the next maintenance run catches up on a failure.
+      await runSavedSearchAlerts(db, { videoIds: [videoId] }).catch((err: Error) => log.warn('saved-search alerts failed', { videoId, error: err.message }));
+    }
     log.info('video processed', { videoId, status: decision.status, categories: decision.case?.categories });
     return { outcome: decision.status };
   } finally {

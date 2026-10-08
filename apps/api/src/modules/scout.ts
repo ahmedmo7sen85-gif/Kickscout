@@ -11,10 +11,11 @@ import { route } from '../platform/route.js';
 import { ApiError, conflict, forbidden, notFound } from '../platform/errors.js';
 import { newId } from '../platform/ids.js';
 import { audit, notify } from '../platform/events.js';
-import { ageBandOf, currentConsents } from '../platform/actor.js';
 import { decodeCursor, encodeCursor } from '../platform/cursor.js';
 import { discoverablePlayers, filterPlayers } from './catalog.js';
 import { playerCards } from './views.js';
+import { sendContactRequest } from './contact-flow.js';
+import { organizationVerificationTarget } from './orgs.js';
 
 const Uuid = z.uuid();
 
@@ -168,31 +169,11 @@ export const scoutRoutes = [
   route(
     { method: 'post', path: '/v1/scout/players/:playerId/contact', summary: 'Ask to contact a player (goes to the guardian for a minor)', tag: 'scout', auth: 'user', body: ContactRequestCreate, status: 202, rateLimit: { max: 20, timeWindow: '1 day' } },
     async (ctx) => {
-      const me = ctx.me();
+      // Shared with the CRM's Contact Requested stage: consent, privacy and guardian routing live in one place.
       ctx.authorize({ kind: 'scout.use' });
-      const playerId = await discoverablePlayer(ctx.deps, ctx, ctx.params.playerId);
-      const [consents, privacy] = await Promise.all([
-        currentConsents(ctx.deps.db, playerId),
-        ctx.deps.db.selectFrom('privacy_settings').select('allow_contact_requests').where('user_id', '=', playerId).executeTakeFirst(),
-      ]);
-      // Both must hold: the scout-contact consent (the guardian's, for a minor) and the player's own contact toggle.
-      ctx.authorize({ kind: 'scout.contact', playerId, playerAcceptsContact: consents.has('scout_contact') && privacy?.allow_contact_requests === true });
-      const band = await ageBandOf(ctx.deps.db, playerId);
-      let routedTo = playerId;
-      if (!band || isMinor(band)) {
-        const g = await ctx.deps.db.selectFrom('guardian_relationships').select('guardian_user_id').where('minor_user_id', '=', playerId)
-          .where('status', '=', 'active').orderBy('created_at').executeTakeFirst();
-        if (!g) throw forbidden('CONTACT_NOT_ALLOWED', 'this player does not accept scout contact');
-        routedTo = g.guardian_user_id;
-      }
-      await ctx.deps.db.transaction().execute(async (tx) => {
-        const id = newId();
-        const res = await tx.insertInto('contact_requests').values({ id, scout_id: me.userId, player_id: playerId, routed_to: routedTo, message: ctx.body.message })
-          .onConflict((oc) => oc.columns(['scout_id', 'player_id']).where('status', '=', 'pending').doNothing()).returning('id').executeTakeFirst();
-        if (!res) throw conflict('ALREADY_REQUESTED', 'you already have a pending request for this player');
-        await notify(tx, routedTo, 'contact.requested', { requestId: id, playerId });
-        await audit(tx, { actorId: me.userId, action: 'scout.contact_requested', targetKind: 'user', targetId: playerId, metadata: { requestId: id, viaGuardian: routedTo !== playerId } });
-      });
+      const playerId = Uuid.safeParse(ctx.params.playerId);
+      if (!playerId.success) throw notFound('player');
+      await sendContactRequest(ctx.deps, ctx.me(), playerId.data, ctx.body.message);
     },
   ),
 
@@ -207,13 +188,15 @@ export const scoutRoutes = [
           'contact_requests.message', 'contact_requests.status', 'contact_requests.created_at', 'sp.handle as scout_handle',
           'sp.display_name as scout_name', 'pp.handle as player_handle',
           eb.selectFrom('verification_requests').select('organization').whereRef('verification_requests.user_id', '=', 'contact_requests.scout_id')
-            .where('kind', '=', 'scout').where('status', '=', 'approved').orderBy('decided_at', 'desc').limit(1).as('organization')])
+            .where('kind', '=', 'scout').where('status', '=', 'approved').orderBy('decided_at', 'desc').limit(1).as('organization'),
+          // Sent for an organization's pipeline: the organization's name is shown instead.
+          eb.selectFrom('organizations').select('name').whereRef('organizations.id', '=', 'contact_requests.organization_id').as('org_name')])
         .orderBy('contact_requests.created_at', 'desc').limit(100);
       q = ctx.query.direction === 'incoming' ? q.where('contact_requests.routed_to', '=', me.userId) : q.where('contact_requests.scout_id', '=', me.userId);
       const rows = await q.execute();
       return {
         items: rows.map((r) => ({
-          id: r.id, scout: { userId: r.scout_id, handle: r.scout_handle, displayName: r.scout_name, organization: r.organization ?? null },
+          id: r.id, scout: { userId: r.scout_id, handle: r.scout_handle, displayName: r.scout_name, organization: r.org_name ?? r.organization ?? null },
           player: { userId: r.player_id, handle: r.player_handle }, viaGuardian: r.routed_to !== r.player_id, message: r.message,
           status: r.status as never, createdAt: r.created_at.toISOString(),
         })),
@@ -238,25 +221,37 @@ export const scoutRoutes = [
   ),
 
   route(
-    { method: 'post', path: '/v1/verification-requests', summary: 'Apply for player or scout verification', tag: 'verification', auth: 'user', body: VerificationRequestCreate, response: VerificationRequestView, status: 201, rateLimit: { max: 5, timeWindow: '1 day' } },
+    { method: 'post', path: '/v1/verification-requests', summary: 'Apply for verification: identity, player, scout or organization', tag: 'verification', auth: 'user', body: VerificationRequestCreate, response: VerificationRequestView, status: 201, rateLimit: { max: 5, timeWindow: '1 day' } },
     async (ctx) => {
       const me = ctx.me();
       const b = ctx.body;
       if (b.kind === 'player' && !me.roles.includes('player')) throw forbidden('ROLE_REQUIRED', 'only players can apply for player verification');
       if (b.kind === 'scout' && isMinor(me.ageBand)) throw forbidden('ADULTS_ONLY', 'scouts must be adults');
       if (b.kind === 'scout' && !b.organization) throw new ApiError(400, 'ORGANIZATION_REQUIRED', 'tell us which club, academy or agency you scout for');
+      // Identity checks involve personal documents; for a minor that is the guardian's business (not built yet).
+      if (b.kind === 'identity' && isMinor(me.ageBand)) throw forbidden('ADULTS_ONLY', 'identity verification is for adults');
+      // Organization verification: asked by the organization's owner or an admin, one pending request per organization.
+      const target = b.kind === 'organization' ? await organizationVerificationTarget(ctx.deps, me, b.organizationId) : null;
       const id = newId();
       const profile = await ctx.deps.db.selectFrom('profiles').select(['handle', 'display_name']).where('user_id', '=', me.userId).executeTakeFirstOrThrow();
       const created = await ctx.deps.db.transaction().execute(async (tx) => {
-        const res = await tx.insertInto('verification_requests').values({ id, user_id: me.userId, kind: b.kind, organization: b.organization ?? null, evidence: b.evidence })
-          .onConflict((oc) => oc.columns(['user_id', 'kind']).where('status', '=', 'pending').doNothing()).returning('created_at').executeTakeFirst();
+        if (target) {
+          const pending = await tx.selectFrom('verification_requests').select('id').where('organization_id', '=', target.id).where('status', '=', 'pending').executeTakeFirst();
+          if (pending) throw conflict('ALREADY_PENDING', 'this organization already has a pending request');
+        }
+        const res = await tx.insertInto('verification_requests').values({
+          id, user_id: me.userId, kind: b.kind, organization: target?.name ?? b.organization ?? null, organization_id: target?.id ?? null, evidence: b.evidence,
+        }).onConflict((oc) => oc.doNothing()).returning('created_at').executeTakeFirst();
         if (!res) throw conflict('ALREADY_PENDING', 'you already have a pending request');
-        await audit(tx, { actorId: me.userId, action: 'verification.requested', targetKind: 'user', targetId: me.userId, metadata: { kind: b.kind } });
+        await audit(tx, {
+          actorId: me.userId, action: 'verification.requested', targetKind: target ? 'organization' : 'user', targetId: target?.id ?? me.userId, metadata: { kind: b.kind },
+        });
         return res;
       });
       return {
         id, user: { userId: me.userId, handle: profile.handle, displayName: profile.display_name }, kind: b.kind, status: 'pending' as const,
-        organization: b.organization ?? null, evidence: b.evidence, createdAt: created.created_at.toISOString(),
+        organization: target?.name ?? b.organization ?? null, targetOrganization: target ? { id: target.id, name: target.name, type: target.type, country: target.country_code } : null,
+        evidence: b.evidence, createdAt: created.created_at.toISOString(),
       };
     },
   ),

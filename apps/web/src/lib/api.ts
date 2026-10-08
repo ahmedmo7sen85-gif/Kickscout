@@ -14,6 +14,8 @@ export const KNOWN_ERROR_CODES = [
   'NOT_REGISTERED', 'UNAUTHENTICATED', 'FORBIDDEN', 'NOT_FOUND', 'ROLE_REQUIRED', 'VALIDATION_FAILED', 'HANDLE_TAKEN',
   'UNDER_MINIMUM_AGE', 'ALREADY_REGISTERED', 'ACCOUNT_INACTIVE', 'BLOCKED', 'COMMENTS_OFF', 'FOLLOWERS_ONLY', 'SELF_FOLLOW',
   'RATE_LIMITED', 'NETWORK_ERROR', 'UPLOAD_FAILED', 'INTERNAL', 'VIDEO_REQUIRED', 'NOT_REMOVED_FOR_COPYRIGHT', 'ALREADY_PENDING',
+  'NOT_A_MEMBER', 'ORG_ROLE_REQUIRED', 'ORG_SUSPENDED', 'INVITATION_INVALID', 'EMAIL_MISMATCH', 'CONTACT_NOT_ACCEPTED', 'ALREADY_REQUESTED',
+  'OWNER_MUST_TRANSFER', 'ADULTS_ONLY',
 ] as const;
 export type KnownErrorCode = (typeof KNOWN_ERROR_CODES)[number];
 
@@ -119,6 +121,7 @@ export function createApiClient(opts: ApiClientOptions = {}) {
   const get = <R>(path: string, query?: Query, signal?: AbortSignal) => request<R>(path, { query, signal });
   const send = <R>(method: 'POST' | 'PUT' | 'PATCH' | 'DELETE', path: string, body?: unknown) => request<R>(path, { method, body });
   const e = encodeURIComponent;
+  const crm = (orgId: string | null) => (orgId ? `/v1/orgs/${e(orgId)}/crm` : '/v1/scout/crm');
 
   return {
     request,
@@ -208,6 +211,31 @@ export function createApiClient(opts: ApiClientOptions = {}) {
     decideVerification: (id: string, b: T.VerificationDecisionRequest) => send<unknown>('POST', `/v1/admin/verification-requests/${e(id)}/decision`, b),
     auditLogs: (s?: AbortSignal) => get<T.AuditLogPage>('/v1/admin/audit-logs', undefined, s),
     createChallenge: (b: T.CreateChallengeRequest) => send<T.ChallengeView>('POST', '/v1/admin/challenges', b),
+
+    // organizations
+    createOrg: (b: T.CreateOrganizationRequest) => send<T.OrganizationPublicView>('POST', '/v1/orgs', b),
+    myOrgs: (s?: AbortSignal) => get<T.MyOrganizations>('/v1/orgs/mine', undefined, s),
+    org: (id: string, s?: AbortSignal) => get<T.OrganizationPublicView>(`/v1/orgs/${e(id)}`, undefined, s),
+    orgDashboard: (id: string, s?: AbortSignal) => get<T.OrganizationDashboard>(`/v1/orgs/${e(id)}/dashboard`, undefined, s),
+    updateOrg: (id: string, b: T.UpdateOrganizationRequest) => send<T.OrganizationPublicView>('PATCH', `/v1/orgs/${e(id)}`, b),
+    inviteToOrg: (id: string, b: T.CreateOrgInvitationRequest) => send<T.CreateOrgInvitationResponse>('POST', `/v1/orgs/${e(id)}/invitations`, b),
+    revokeOrgInvitation: (id: string, invitationId: string) => send<void>('DELETE', `/v1/orgs/${e(id)}/invitations/${e(invitationId)}`),
+    acceptOrgInvitation: (b: T.OrgInvitationTokenRequest) => send<T.AcceptOrgInvitationResponse>('POST', '/v1/org-invitations/accept', b),
+    declineOrgInvitation: (b: T.OrgInvitationTokenRequest) => send<void>('POST', '/v1/org-invitations/decline', b),
+    setOrgMemberRole: (id: string, userId: string, b: T.UpdateOrgMemberRequest) => send<void>('PATCH', `/v1/orgs/${e(id)}/members/${e(userId)}`, b),
+    removeOrgMember: (id: string, userId: string) => send<void>('DELETE', `/v1/orgs/${e(id)}/members/${e(userId)}`),
+    leaveOrg: (id: string) => send<void>('POST', `/v1/orgs/${e(id)}/leave`),
+
+    // scout CRM: `orgId` null is the scout's own pipeline
+    pipeline: (orgId: string | null, q: T.PipelineQuery = {}, s?: AbortSignal) => get<T.PipelineView>(`${crm(orgId)}/pipeline`, q as Query, s),
+    addToPipeline: (orgId: string | null, playerId: string, b: T.AddToPipelineRequest = {}) => send<T.CrmEntryView>('PUT', `${crm(orgId)}/players/${e(playerId)}`, b),
+    crmEntry: (orgId: string | null, entryId: string, s?: AbortSignal) => get<T.CrmEntryDetail>(`${crm(orgId)}/entries/${e(entryId)}`, undefined, s),
+    moveCrmEntry: (orgId: string | null, entryId: string, b: T.CrmStageChangeRequest) => send<T.CrmEntryView>('POST', `${crm(orgId)}/entries/${e(entryId)}/stage`, b),
+    addCrmNote: (orgId: string | null, entryId: string, b: T.CreateCrmNoteRequest) => send<T.CrmNoteView>('POST', `${crm(orgId)}/entries/${e(entryId)}/notes`, b),
+    savedSearches: (orgId: string | null, s?: AbortSignal) => get<T.SavedSearchList>(`${crm(orgId)}/saved-searches`, undefined, s),
+    createSavedSearch: (orgId: string | null, b: T.CreateSavedSearchRequest) => send<T.SavedSearchView>('POST', `${crm(orgId)}/saved-searches`, b),
+    updateSavedSearch: (orgId: string | null, id: string, b: T.UpdateSavedSearchRequest) => send<T.SavedSearchView>('PATCH', `${crm(orgId)}/saved-searches/${e(id)}`, b),
+    deleteSavedSearch: (orgId: string | null, id: string) => send<void>('DELETE', `${crm(orgId)}/saved-searches/${e(id)}`),
   };
 }
 

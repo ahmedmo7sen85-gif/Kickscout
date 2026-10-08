@@ -1,6 +1,7 @@
 import { readFile, readdir, rm } from 'node:fs/promises';
 import os from 'node:os';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { v7 as uuidv7 } from 'uuid';
 import type { Analysis, VideoAnalyzer } from '../src/analyzer/types.js';
 import { PermanentJobError } from '../src/errors.js';
 import { processVideo } from '../src/pipeline.js';
@@ -84,6 +85,25 @@ describe('video.process', () => {
     expect(audit).toHaveLength(1);
     expect(audit[0]).toMatchObject({ action: 'ai.moderation', actor_id: null });
     expect((await getJob(env.db, jobId)).status).toBe('done');
+  });
+
+  it('alerts scouts whose saved search matches the player as soon as the clip is published', async () => {
+    const owner = await seedUser(env.db);
+    await env.db.insertInto('user_roles').values({ user_id: owner, role: 'player' }).execute();
+    await env.db.insertInto('privacy_settings').values({ user_id: owner, profile_visibility: 'public' }).execute();
+    await env.db.insertInto('player_profiles').values({ user_id: owner, primary_position: 'CM' }).execute();
+    const scout = await seedUser(env.db);
+    await env.db.insertInto('user_roles').values({ user_id: scout, role: 'scout' }).execute();
+    await env.db.insertInto('saved_searches').values({
+      id: uuidv7(), owner_user_id: scout, created_by: scout, name: 'Jugglers', filters: JSON.stringify({ position: 'CM', skill: 'juggling' }), alerts_enabled: true,
+      alerts_since: new Date(Date.now() - 60_000),
+    }).execute();
+    const { videoId } = await seedVideo(env, { owner, clip: clips.valid });
+    await drain(FakeAnalyzer.returning(SAFE));
+    expect((await getVideo(env.db, videoId)).status).toBe('published');
+    const alerts = (await notificationsFor(env.db, scout)).filter((n) => n.kind === 'saved_search.match');
+    expect(alerts).toHaveLength(1);
+    expect(alerts[0]!.payload).toMatchObject({ name: 'Jugglers', clips: 1, players: [{ userId: owner }] });
   });
 
   it('is idempotent: a second run of the same job leaves a published video alone', async () => {

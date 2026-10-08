@@ -13,6 +13,10 @@
     "./serverless": {
       "types": "./dist/serverless.d.ts",
       "default": "./dist/serverless.js"
+    },
+    "./alerts": {
+      "types": "./dist/alerts.d.ts",
+      "default": "./dist/alerts.js"
     }
   },
   "scripts": {
@@ -25,6 +29,7 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.132.1",
     "@aws-sdk/client-s3": "^3.900.0",
+    "@fp/contracts": "workspace:*",
     "@fp/db": "workspace:*",
     "@fp/domain": "workspace:*",
     "kysely": "^0.28.0",

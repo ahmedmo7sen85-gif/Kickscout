@@ -30,6 +30,23 @@ describe('can()', () => {
     expect(can(actor({ roles: ['scout'] }), { kind: 'scout.use' }).allowed).toBe(true);
   });
 
+  it('lets adults found organizations, and acts inside one by membership role', () => {
+    expect(can(actor({ roles: ['fan'] }), { kind: 'org.create' }).allowed).toBe(true);
+    expect(can(actor({ ageBand: 'u16' }), { kind: 'org.create' })).toMatchObject({ code: 'ADULTS_ONLY' });
+    const fan = actor({ roles: ['fan'] });
+    const scout = actor({ roles: ['fan', 'scout'] });
+    expect(can(scout, { kind: 'org.act', role: null, action: 'org.read' })).toMatchObject({ code: 'NOT_A_MEMBER' });
+    expect(can(fan, { kind: 'org.act', role: 'viewer', action: 'org.read' }).allowed).toBe(true);
+    expect(can(fan, { kind: 'org.act', role: 'viewer', action: 'crm.note' })).toMatchObject({ code: 'ORG_ROLE_REQUIRED' });
+    expect(can(fan, { kind: 'org.act', role: 'analyst', action: 'crm.note' }).allowed).toBe(true);
+    // Working with players needs the platform's scout verification as well as the organization role.
+    expect(can(fan, { kind: 'org.act', role: 'owner', action: 'crm.write' })).toMatchObject({ code: 'SCOUT_VERIFICATION_REQUIRED' });
+    expect(can(scout, { kind: 'org.act', role: 'scout', action: 'crm.write' }).allowed).toBe(true);
+    expect(can(scout, { kind: 'org.act', role: 'scout', action: 'members.manage' })).toMatchObject({ code: 'ORG_ROLE_REQUIRED' });
+    expect(can(fan, { kind: 'org.act', role: 'admin', action: 'members.manage' }).allowed).toBe(true);
+    expect(can(actor({ roles: ['scout'], status: 'suspended' }), { kind: 'org.act', role: 'owner', action: 'org.read' })).toMatchObject({ code: 'ACCOUNT_INACTIVE' });
+  });
+
   it('lets scouts request contact only when the player (or guardian) allows it', () => {
     const scout = actor({ userId: 's', roles: ['scout'] });
     expect(can(scout, { kind: 'scout.contact', playerId: 'p', playerAcceptsContact: false })).toMatchObject({ code: 'CONTACT_NOT_ALLOWED' });

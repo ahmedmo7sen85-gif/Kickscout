@@ -152,16 +152,18 @@ export const socialRoutes = [
   ),
 
   route(
-    { method: 'post', path: '/v1/reports', summary: 'Report a video, comment or user', tag: 'safety', auth: 'user', body: ReportRequest, status: 202, rateLimit: { max: 30, timeWindow: '1 hour' } },
+    { method: 'post', path: '/v1/reports', summary: 'Report a video, comment, user or organization', tag: 'safety', auth: 'user', body: ReportRequest, status: 202, rateLimit: { max: 30, timeWindow: '1 hour' } },
     async (ctx) => {
       ctx.authorize({ kind: 'report.create' });
       const { targetKind, targetId, reason, details } = ctx.body;
       // Child-safety reports, and any report about a minor's content, go to the front of the queue.
       let ownerId: string | undefined;
       if (targetKind === 'user') ownerId = targetId;
+      // An organization has no single owner whose age matters here; it must exist and not be deleted.
+      else if (targetKind === 'organization') ownerId = (await ctx.deps.db.selectFrom('organizations').select('id').where('id', '=', targetId).where('status', '!=', 'deleted').executeTakeFirst())?.id;
       else if (targetKind === 'video') ownerId = (await ctx.deps.db.selectFrom('videos').select('owner_user_id').where('id', '=', targetId).executeTakeFirst())?.owner_user_id;
       else ownerId = (await ctx.deps.db.selectFrom('comments').select('author_id').where('id', '=', targetId).executeTakeFirst())?.author_id;
-      const band = ownerId ? await ageBandOf(ctx.deps.db, ownerId) : null;
+      const band = ownerId && targetKind !== 'organization' ? await ageBandOf(ctx.deps.db, ownerId) : null;
       const priority = reason === 'child_safety' || (band && isMinor(band)) ? 0
         : reason === 'violence' || reason === 'hate' || reason === 'inappropriate_contact' || reason === 'fake_scout' ? 1 : 2;
 

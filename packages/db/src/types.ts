@@ -96,6 +96,7 @@ export interface ContactRequests {
   created_at: Generated<Timestamp>;
   id: string;
   message: string;
+  organization_id: string | null;
   player_id: string;
   responded_at: Timestamp | null;
   routed_to: string;
@@ -127,6 +128,37 @@ export interface CopyrightCounterNotices {
   status: Generated<string>;
   submitted_by: string;
   video_id: string;
+}
+
+export interface CrmEntries {
+  contact_request_id: string | null;
+  created_at: Generated<Timestamp>;
+  created_by: string | null;
+  id: string;
+  organization_id: string | null;
+  owner_user_id: string | null;
+  player_id: string;
+  stage: Generated<string>;
+  tags: Generated<string[]>;
+  updated_at: Generated<Timestamp>;
+}
+
+export interface CrmNotes {
+  author_id: string | null;
+  body: string;
+  created_at: Generated<Timestamp>;
+  entry_id: string;
+  id: string;
+  updated_at: Generated<Timestamp>;
+}
+
+export interface CrmStageHistory {
+  changed_by: string | null;
+  created_at: Generated<Timestamp>;
+  entry_id: string;
+  from_stage: string | null;
+  id: string;
+  to_stage: string;
 }
 
 export interface Follows {
@@ -230,6 +262,43 @@ export interface Notifications {
   user_id: string;
 }
 
+export interface OrganizationInvitations {
+  created_at: Generated<Timestamp>;
+  email: string;
+  expires_at: Timestamp;
+  id: string;
+  invited_by: string | null;
+  organization_id: string;
+  responded_at: Timestamp | null;
+  responded_by: string | null;
+  role: string;
+  status: Generated<string>;
+  token_hash: Buffer;
+}
+
+export interface OrganizationMembers {
+  added_by: string | null;
+  created_at: Generated<Timestamp>;
+  organization_id: string;
+  role: string;
+  updated_at: Generated<Timestamp>;
+  user_id: string;
+}
+
+export interface Organizations {
+  country_code: string | null;
+  created_at: Generated<Timestamp>;
+  created_by: string | null;
+  deleted_at: Timestamp | null;
+  id: string;
+  logo_key: string | null;
+  name: string;
+  status: Generated<string>;
+  type: string;
+  updated_at: Generated<Timestamp>;
+  verified_at: Timestamp | null;
+}
+
 export interface Outbox {
   created_at: Generated<Timestamp>;
   id: Generated<Int8>;
@@ -292,6 +361,26 @@ export interface Reports {
   status: Generated<string>;
   target_id: string;
   target_kind: string;
+}
+
+export interface SavedSearches {
+  alerts_enabled: Generated<boolean>;
+  alerts_since: Generated<Timestamp>;
+  created_at: Generated<Timestamp>;
+  created_by: string;
+  filters: Generated<Json>;
+  id: string;
+  name: string;
+  organization_id: string | null;
+  owner_user_id: string | null;
+  updated_at: Generated<Timestamp>;
+}
+
+export interface SavedSearchHits {
+  created_at: Generated<Timestamp>;
+  player_id: string;
+  saved_search_id: string;
+  video_id: string;
 }
 
 export interface Saves {
@@ -357,6 +446,7 @@ export interface VerificationRequests {
   id: string;
   kind: string;
   organization: string | null;
+  organization_id: string | null;
   status: Generated<string>;
   user_id: string;
 }
@@ -436,6 +526,9 @@ export interface DB {
   contact_requests: ContactRequests;
   copyright_claims: CopyrightClaims;
   copyright_counter_notices: CopyrightCounterNotices;
+  crm_entries: CrmEntries;
+  crm_notes: CrmNotes;
+  crm_stage_history: CrmStageHistory;
   follows: Follows;
   guardian_invitations: GuardianInvitations;
   guardian_relationships: GuardianRelationships;
@@ -446,6 +539,9 @@ export interface DB {
   moderation_cases: ModerationCases;
   notification_preferences: NotificationPreferences;
   notifications: Notifications;
+  organization_invitations: OrganizationInvitations;
+  organization_members: OrganizationMembers;
+  organizations: Organizations;
   outbox: Outbox;
   player_profiles: PlayerProfiles;
   privacy_settings: PrivacySettings;
@@ -453,6 +549,8 @@ export interface DB {
   rate_limit_hits: RateLimitHits;
   regions: Regions;
   reports: Reports;
+  saved_search_hits: SavedSearchHits;
+  saved_searches: SavedSearches;
   saves: Saves;
   scout_notes: ScoutNotes;
   shortlist_players: ShortlistPlayers;

@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import {
-  CopyrightTakedownRequest, CreateUploadRequest, DeleteAccountRequest, Position, RegisterRequest, SkillKey, UpdateNotificationPreferencesRequest,
+  CopyrightTakedownRequest, CreateOrgInvitationRequest, CreateSavedSearchRequest, CrmStageChangeRequest, AddToPipelineRequest, ReportRequest,
+  UpdateOrganizationRequest, VerificationRequestCreate, CreateUploadRequest, DeleteAccountRequest, Position, RegisterRequest, SkillKey, UpdateNotificationPreferencesRequest,
   VideoCategory, buildOpenApi,
 } from './index.js';
 
@@ -52,6 +53,31 @@ describe('contracts', () => {
     expect(RegisterRequest.safeParse({ ...r, roles: ['player'] }).success).toBe(true);
     expect(RegisterRequest.safeParse({ ...r, roles: ['scout'] }).success).toBe(false);
     expect(RegisterRequest.safeParse({ ...r, roles: ['admin'] }).success).toBe(false);
+  });
+
+  it('validates saved-search filters with the scout search schema', () => {
+    expect(CreateSavedSearchRequest.parse({ name: 'Left wingers', filters: { position: 'LW', country: 'EG', minFollowers: 10 } }))
+      .toMatchObject({ alerts: false, filters: { position: 'LW', country: 'EG', minFollowers: 10 } });
+    expect(CreateSavedSearchRequest.safeParse({ name: 'x', filters: { position: 'Striker' } }).success).toBe(false);
+    expect(CreateSavedSearchRequest.safeParse({ name: 'x', filters: { country: 'egypt' } }).success).toBe(false);
+    expect(CreateSavedSearchRequest.safeParse({ name: 'x', filters: { ageGroup: 'u10' } }).success).toBe(false);
+    // Paging is not part of a saved search.
+    expect(CreateSavedSearchRequest.parse({ name: 'x', filters: { cursor: 'abc', limit: 5 } }).filters).toEqual({});
+  });
+
+  it('never lets an invitation or a profile edit grant ownership or point the logo elsewhere', () => {
+    expect(CreateOrgInvitationRequest.safeParse({ email: 'a@b.co', role: 'owner' }).success).toBe(false);
+    expect(CreateOrgInvitationRequest.safeParse({ email: 'a@b.co', role: 'scout' }).success).toBe(true);
+    expect(UpdateOrganizationRequest.safeParse({ logoKey: '../avatars/x.png' }).success).toBe(false);
+    expect(UpdateOrganizationRequest.safeParse({ logoKey: 'org-logos/0190f3c4-1111-7000-8000-000000000000/logo.png' }).success).toBe(true);
+  });
+
+  it('only places cards directly in non-contact stages, and carries verification types and organization reports', () => {
+    expect(AddToPipelineRequest.safeParse({ stage: 'contact_requested' }).success).toBe(false);
+    expect(AddToPipelineRequest.parse({})).toEqual({ stage: 'new', tags: [] });
+    expect(CrmStageChangeRequest.safeParse({ stage: 'contact_requested', message: 'hi' }).success).toBe(false);
+    for (const kind of ['identity', 'player', 'scout', 'organization']) expect(VerificationRequestCreate.safeParse({ kind, evidence: 'link to our registration' }).success).toBe(true);
+    expect(ReportRequest.safeParse({ targetKind: 'organization', targetId: '0190f3c4-1111-7000-8000-000000000000', reason: 'fake_scout' }).success).toBe(true);
   });
 
   it('builds OpenAPI paths with path and query parameters', () => {

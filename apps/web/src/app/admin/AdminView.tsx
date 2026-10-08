@@ -107,6 +107,10 @@ function Moderation() {
                   </div>
                 </div>
               ) : null}
+              {c.organization ? (
+                <p className="small"><Link className="link" href={`/org/${c.organization.id}`} dir="auto">{c.organization.name}</Link>{' '}
+                  <span className="muted">· {c.organization.type} · {c.organization.status}{c.organization.verified ? ` · ${t.org.verificationApproved}` : ''}</span></p>
+              ) : null}
               {c.comment ? <blockquote className="muted" dir="auto" style={{ margin: 0 }}>“{c.comment.body}” <span className="small">@{c.comment.authorHandle}</span></blockquote> : null}
               {!c.video && !c.comment ? <p className="mono muted">{c.targetId}</p> : null}
               {c.ownerCopyrightStrikes ? (
@@ -178,8 +182,12 @@ function Verifications() {
             <li key={r.id}>
               <div className="list__row">
                 <span><Link className="link" href={`/u/${r.user.handle}`}>@{r.user.handle}</Link> <span className="muted small">{r.user.displayName}</span></span>
-                <span className="row"><span className="badge badge--outline">{r.kind}</span><span className="muted small">{formatDate(r.createdAt)}</span></span>
+                <span className="row"><span className="badge badge--outline">{t.verificationKinds[r.kind]}</span><span className="muted small">{formatDate(r.createdAt)}</span></span>
               </div>
+              {r.targetOrganization ? (
+                <p className="small"><Link className="link" href={`/org/${r.targetOrganization.id}`} dir="auto">{r.targetOrganization.name}</Link>{' '}
+                  <span className="muted">· {r.targetOrganization.type}{r.targetOrganization.country ? ` · ${r.targetOrganization.country}` : ''}</span></p>
+              ) : null}
               {r.organization ? <p className="small"><strong>{t.settings.organization}:</strong> <span dir="auto">{r.organization}</span></p> : null}
               {r.evidence ? <p className="small muted" dir="auto" style={{ whiteSpace: 'pre-wrap' }}>{r.evidence}</p> : null}
               {r.status === 'pending' ? (
