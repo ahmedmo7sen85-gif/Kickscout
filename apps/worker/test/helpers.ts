@@ -16,8 +16,9 @@ import type { WorkerOptions } from '../src/worker.js';
 
 const exec = promisify(execFile);
 const ADMIN_URL = process.env.TEST_DATABASE_ADMIN_URL ?? 'postgres://fp:fp@localhost:5432/postgres';
-export const FFMPEG = '/usr/bin/ffmpeg';
-export const FFPROBE = '/usr/bin/ffprobe';
+// Overridable so the suite can run against the static binaries the Vercel worker ships.
+export const FFMPEG = process.env.TEST_FFMPEG ?? '/usr/bin/ffmpeg';
+export const FFPROBE = process.env.TEST_FFPROBE ?? '/usr/bin/ffprobe';
 
 export const silentLog: Logger = { info() {}, warn() {}, error() {} };
 
@@ -181,6 +182,8 @@ export interface SeedVideo {
   trimStartMs?: number | null;
   trimEndMs?: number | null;
   status?: string;
+  /** The uploader's plan limit recorded at upload start. */
+  maxDurationMs?: number | null;
   /** Append a unique MP4 'free' box so each upload has its own sha256 (default true for .mp4 clips). */
   unique?: boolean;
 }
@@ -205,6 +208,7 @@ export async function seedVideo(env: Env, v: SeedVideo, maxAttempts?: number): P
     .values({
       id: videoId, owner_user_id: v.owner, status: v.status ?? 'processing', original_key: key, declared_type: v.declaredType ?? 'video/mp4',
       size_bytes: 1000, title: 'Test clip', trim_start_ms: v.trimStartMs ?? null, trim_end_ms: v.trimEndMs ?? null,
+      max_duration_ms: v.maxDurationMs ?? null,
     })
     .execute();
   const job = await env.db

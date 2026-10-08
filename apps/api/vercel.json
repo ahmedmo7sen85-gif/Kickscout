@@ -4,6 +4,26 @@
   "installCommand": "cd ../.. && pnpm install --frozen-lockfile",
   "buildCommand": "cd ../.. && pnpm turbo run build --filter=@fp/api",
   "outputDirectory": "public",
-  "functions": { "api/index.js": { "includeFiles": "dist/**", "maxDuration": 30 } },
-  "rewrites": [{ "source": "/(.*)", "destination": "/api" }]
+  "functions": {
+    "api/index.js": {
+      "includeFiles": "dist/**",
+      "maxDuration": 30
+    },
+    "api/worker.js": {
+      "includeFiles": "bin/**",
+      "maxDuration": 300
+    }
+  },
+  "rewrites": [
+    {
+      "source": "/((?!api/worker).*)",
+      "destination": "/api"
+    }
+  ],
+  "crons": [
+    {
+      "path": "/api/worker",
+      "schedule": "0 4 * * *"
+    }
+  ]
 }

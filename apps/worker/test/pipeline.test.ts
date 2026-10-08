@@ -167,6 +167,15 @@ describe('video.process', () => {
     expect(v.status_reason).toMatch(/195 seconds.*180/);
   });
 
+  it("rejects a clip over the uploader's plan limit even when it is under the global cap", async () => {
+    const owner = await seedUser(env.db);
+    const { videoId } = await seedVideo(env, { owner, clip: clips.long, trimStartMs: 0, trimEndMs: 90_000, maxDurationMs: 60_000 });
+    await drain(FakeAnalyzer.returning(SAFE));
+    const v = await getVideo(env.db, videoId);
+    expect(v.status).toBe('rejected');
+    expect(v.status_reason).toMatch(/90 seconds.*limit is 60 seconds/);
+  });
+
   it('accepts the same long clip once trimmed under 180 s', async () => {
     const owner = await seedUser(env.db);
     const { videoId } = await seedVideo(env, { owner, clip: clips.long, trimStartMs: 10_000, trimEndMs: 20_000 });

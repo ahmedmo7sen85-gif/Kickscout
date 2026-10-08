@@ -183,15 +183,27 @@ export interface TrimWindow {
   durationMs: number;
 }
 
-/** Applies the uploader's trim to the real duration and enforces the length and resolution rules. */
-export function validate(info: ProbeInfo, fullDurationMs: number, trimStartMs: number | null, trimEndMs: number | null): TrimWindow {
+/**
+ * Applies the uploader's trim to the real duration and enforces the length and resolution rules.
+ * `maxDurationMs` is the uploader's plan limit, recorded on the video when the upload started; the global cap still applies.
+ */
+export function validate(
+  info: ProbeInfo,
+  fullDurationMs: number,
+  trimStartMs: number | null,
+  trimEndMs: number | null,
+  maxDurationMs: number | null = null,
+): TrimWindow {
   const start = trimStartMs ?? 0;
   const end = Math.min(trimEndMs ?? fullDurationMs, fullDurationMs);
   if (start >= fullDurationMs) throw new MediaRejection('The trim starts after the end of the video.');
   const duration = end - start;
   if (duration < LIMITS.minDurationMs) throw new MediaRejection('The video is shorter than 1 second after trimming.');
-  if (duration > LIMITS.maxDurationMs) {
-    throw new MediaRejection(`The video is ${Math.round(duration / 1000)} seconds long after trimming; the limit is 180 seconds.`);
+  const max = Math.min(LIMITS.maxDurationMs, maxDurationMs ?? LIMITS.maxDurationMs);
+  if (duration > max) {
+    throw new MediaRejection(
+      `The video is ${Math.round(duration / 1000)} seconds long after trimming; the limit is ${Math.round(max / 1000)} seconds. Trim it and upload again.`,
+    );
   }
   const short = Math.min(info.width, info.height);
   const long = Math.max(info.width, info.height);

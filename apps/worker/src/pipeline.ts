@@ -66,7 +66,7 @@ export async function processVideo(deps: PipelineDeps, videoId: string): Promise
       const decoded = await decodeCheck(deps.media, original);
       const fullMs = info.durationMs ?? decoded.decodedMs;
       if (!fullMs) throw new MediaRejection('The length of the video could not be determined.');
-      trim = validate(info, fullMs, video.trim_start_ms, video.trim_end_ms);
+      trim = validate(info, fullMs, video.trim_start_ms, video.trim_end_ms, video.max_duration_ms);
     } catch (err) {
       if (!(err instanceof MediaRejection)) throw err;
       const changed = await db.transaction().execute(async (tx) => {

@@ -2,6 +2,7 @@ import type { StoredProfile, Relation, Actor, Position } from '@fp/domain';
 import { isMinor, projectProfile } from '@fp/domain';
 import type { Database } from '@fp/db';
 import type { Deps } from '../deps.js';
+import { mediaUrl } from '../platform/storage.js';
 
 export async function regionChain(db: Database, regionId: string | null): Promise<StoredProfile['region']> {
   const out: StoredProfile['region'] = { macro: null, country: null, city: null };
@@ -111,7 +112,7 @@ export async function profileView(deps: Deps, viewer: Actor | null, userId: stri
   const { avatarKey, ...rest } = projected;
   return {
     ...rest,
-    avatarUrl: avatarKey ? `${deps.config.CDN_BASE_URL}/${avatarKey}` : null,
+    avatarUrl: avatarKey ? mediaUrl(deps.config.CDN_BASE_URL, avatarKey) : null,
     verified: extra.verified_at !== null,
     isDemo: extra.is_demo,
     stats,
@@ -161,7 +162,7 @@ export async function playerCards(deps: Deps, viewer: Actor | null, userIds: rea
       userId: r.id,
       handle: r.handle,
       displayName: r.display_name,
-      avatarUrl: r.avatar_key ? `${deps.config.CDN_BASE_URL}/${r.avatar_key}` : null,
+      avatarUrl: r.avatar_key ? mediaUrl(deps.config.CDN_BASE_URL, r.avatar_key) : null,
       verified: r.verified_at !== null,
       isDemo: r.is_demo,
       country: r.region_precision === 'macro' ? null : r.country_code,

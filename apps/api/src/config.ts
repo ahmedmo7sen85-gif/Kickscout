@@ -26,6 +26,15 @@ const Env = z
     POLICY_VERSION: z.string().default('2026-10-draft'),
     /** Comma-separated origins allowed to call the API from a browser (the web app). */
     CORS_ORIGINS: z.string().default('http://localhost:3000'),
+    /** 'postgres' shares rate-limit counters across instances (needed on serverless hosts); 'memory' is per process. */
+    RATE_LIMIT_STORE: z.enum(['memory', 'postgres']).default('memory'),
+    /** Upload limits for the free plan until plans and entitlements exist. */
+    MAX_VIDEO_SECONDS: z.coerce.number().int().min(5).max(600).default(60),
+    MAX_ACTIVE_VIDEOS: z.coerce.number().int().min(1).default(20),
+    MAX_UPLOADS_PER_DAY: z.coerce.number().int().min(1).default(10),
+    /** Optional: the worker endpoint to wake after an upload completes (serverless worker). */
+    WORKER_TRIGGER_URL: z.url().optional(),
+    WORKER_TRIGGER_SECRET: z.string().min(32).optional(),
   })
   .refine((e) => !(e.NODE_ENV === 'production' && e.MAILER === 'log' && e.ALLOW_LOG_MAILER !== 'yes'), {
     message: 'MAILER=log is for development only; configure a real mailer in production',

@@ -31,6 +31,9 @@ export const ConfigSchema = z.object({
   JOB_RETRY_BASE_MS: z.coerce.number().int().min(0).default(30_000),
   MAX_ORIGINAL_BYTES: z.coerce.number().int().min(1).default(500 * 1024 * 1024),
 
+  // Serverless runs (Vercel): stop claiming jobs after this long so the job in flight finishes inside the function limit.
+  SERVERLESS_CLAIM_BUDGET_MS: z.coerce.number().int().min(0).default(120_000),
+
   FFMPEG_PATH: z.string().min(1).default('ffmpeg'),
   FFPROBE_PATH: z.string().min(1).default('ffprobe'),
   WORK_DIR: optionalString,

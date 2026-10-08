@@ -45,3 +45,11 @@ export class S3Storage implements ObjectStorage {
     }
   }
 }
+
+/**
+ * Public URL for a stored media key. Keys that are already absolute URLs are returned as they are: the demo
+ * catalogue points at media hosted with the web app, while real uploads live in the delivery bucket behind CDN_BASE_URL.
+ */
+export function mediaUrl(cdnBaseUrl: string, key: string): string {
+  return /^https?:\/\//.test(key) ? key : `${cdnBaseUrl}/${key}`;
+}

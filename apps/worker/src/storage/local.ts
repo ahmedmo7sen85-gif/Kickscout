@@ -1,4 +1,4 @@
-import { copyFile, mkdir, stat } from 'node:fs/promises';
+import { copyFile, mkdir, rm, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { PermanentJobError } from '../errors.js';
 import type { VideoStorage } from './storage.js';
@@ -28,6 +28,10 @@ export class LocalVideoStorage implements VideoStorage {
     const dest = this.deliveryPath(key);
     await mkdir(path.dirname(dest), { recursive: true });
     await copyFile(srcPath, dest);
+  }
+
+  async deleteObjects(area: 'originals' | 'delivery', keys: string[]) {
+    for (const key of keys) await rm(this.safe(area, key), { force: true });
   }
 
   private safe(area: string, key: string) {

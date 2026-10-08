@@ -2,7 +2,7 @@ import { createReadStream, createWriteStream } from 'node:fs';
 import { stat } from 'node:fs/promises';
 import { Readable, Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
-import { GetObjectCommand, NoSuchKey, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import { DeleteObjectCommand, GetObjectCommand, NoSuchKey, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { PermanentJobError } from '../errors.js';
 import type { VideoStorage } from './storage.js';
 
@@ -64,5 +64,11 @@ export class S3VideoStorage implements VideoStorage {
         CacheControl: 'public, max-age=3600',
       }),
     );
+  }
+
+  async deleteObjects(area: 'originals' | 'delivery', keys: string[]) {
+    const Bucket = area === 'originals' ? this.opts.originalsBucket : this.opts.deliveryBucket;
+    // One request per key: DeleteObjects (batch) is not implemented by every S3-compatible provider.
+    for (const Key of keys) await this.client.send(new DeleteObjectCommand({ Bucket, Key }));
   }
 }

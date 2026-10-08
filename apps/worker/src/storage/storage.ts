@@ -4,6 +4,8 @@ export interface VideoStorage {
   downloadOriginal(key: string, destPath: string, maxBytes: number): Promise<{ sizeBytes: number }>;
   /** Uploads a processed file to the delivery bucket. */
   uploadDelivery(key: string, srcPath: string, contentType: string): Promise<void>;
+  /** Removes objects; keys that do not exist are ignored. */
+  deleteObjects(area: 'originals' | 'delivery', keys: string[]): Promise<void>;
 }
 
 export const playbackKey = (videoId: string) => `playback/${videoId}.mp4`;

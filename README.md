@@ -160,6 +160,15 @@ transaction pooler (port 6543). The web app is a second Vercel project with root
 `apps/web/public/demo-media/promo` holds labelled placeholder clips for the demo seed until the
 AI promo clips are rendered.
 
+On Vercel the worker is a second function in the API project, `api/worker.js`, which ships static
+ffmpeg/ffprobe binaries (copied into `apps/api/bin` at build). The API calls it when an upload
+completes (`WORKER_TRIGGER_URL` = `https://<api>/api/worker`, `WORKER_TRIGGER_SECRET` set on the
+project), and a daily cron (authenticated with Vercel's `CRON_SECRET`) picks up anything missed and
+runs storage maintenance: abandoned uploads are failed, originals are removed once a video is
+rejected, deleted or published for 7 days, and a deleted video's public files are removed. Each run
+processes queued videos one at a time for up to `SERVERLESS_CLAIM_BUDGET_MS`, inside the 300 s
+function limit. Set `RATE_LIMIT_STORE=postgres` there so limits hold across function instances.
+
 Deploy order: database → run migrations → API → worker → web. Everything can be deployed
 incrementally.
 

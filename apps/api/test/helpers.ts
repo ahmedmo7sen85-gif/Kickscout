@@ -36,6 +36,7 @@ export class RecordingMailer implements Mailer {
 
 export interface TestEnv {
   app: FastifyInstance;
+  deps: Deps;
   db: Database;
   storage: MemoryStorage;
   mailer: RecordingMailer;
@@ -43,7 +44,7 @@ export interface TestEnv {
   close(): Promise<void>;
 }
 
-export async function createTestEnv(): Promise<TestEnv> {
+export async function createTestEnv(overrides: Partial<Config> = {}): Promise<TestEnv> {
   const dbName = `fp_test_${randomBytes(6).toString('hex')}`;
   const admin = new pg.Client({ connectionString: ADMIN_URL });
   await admin.connect();
@@ -63,14 +64,15 @@ export async function createTestEnv(): Promise<TestEnv> {
   const config = {
     NODE_ENV: 'test', PORT: 0, DATABASE_URL: url.toString(), AUTH_JWKS_URL: 'https://idp.test/jwks', AUTH_ISSUER: ISSUER,
     AUTH_AUDIENCE: AUDIENCE, S3_REGION: 'eu-central-1', S3_BUCKET_ORIGINALS: 'test', S3_FORCE_PATH_STYLE: true, CDN_BASE_URL: 'https://cdn.test',
-    DOB_ENCRYPTION_KEY: randomBytes(32).toString('base64'), VIEWER_HASH_SECRET: randomBytes(32).toString('hex'), MAILER: 'log', ALLOW_LOG_MAILER: 'no', POLICY_VERSION: 'test-1',
+    DOB_ENCRYPTION_KEY: randomBytes(32).toString('base64'), VIEWER_HASH_SECRET: randomBytes(32).toString('hex'), MAILER: 'log', ALLOW_LOG_MAILER: 'no', RATE_LIMIT_STORE: 'memory', MAX_VIDEO_SECONDS: 60, MAX_ACTIVE_VIDEOS: 20, MAX_UPLOADS_PER_DAY: 10, POLICY_VERSION: 'test-1',
     CORS_ORIGINS: 'https://web.test',
   } satisfies Config;
+  Object.assign(config, overrides);
   const deps: Deps = { config, db, verifier, storage, mailer, dobKey: Buffer.from(config.DOB_ENCRYPTION_KEY, 'base64'), now: () => new Date() };
   const app = await buildApp(deps, { logger: false });
 
   return {
-    app, db, storage, mailer,
+    app, deps, db, storage, mailer,
     token: (sub, claims = {}) =>
       new SignJWT({ ...claims }).setProtectedHeader({ alg: 'RS256', kid: 'test' }).setSubject(sub).setIssuer(ISSUER)
         .setAudience(AUDIENCE).setIssuedAt().setExpirationTime('10m').sign(privateKey),

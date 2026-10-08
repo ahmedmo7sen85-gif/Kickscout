@@ -7,6 +7,7 @@ import { buildOpenApi } from '@fp/contracts';
 import type { Deps } from './deps.js';
 import { problemHandler } from './platform/errors.js';
 import { register, toRouteSpec } from './platform/route.js';
+import { postgresRateStore } from './platform/rate-store.js';
 import { routes } from './routes.js';
 
 export const API_VERSION = '0.1.0';
@@ -28,6 +29,7 @@ export async function buildApp(deps: Deps, opts: { logger?: boolean } = {}) {
   await app.register(helmet, { contentSecurityPolicy: { directives: { defaultSrc: ["'none'"], frameAncestors: ["'none'"] } } });
   // In production the store is Redis so limits hold across instances.
   await app.register(rateLimit, {
+    ...(deps.config.RATE_LIMIT_STORE === 'postgres' ? { store: postgresRateStore(deps.db), skipOnError: true } : {}),
     max: 300,
     timeWindow: '1 minute',
     // Signed-in callers are limited per token, everyone else per IP.

@@ -326,6 +326,7 @@ export interface Videos {
   created_at: Generated<Timestamp>;
   declared_type: string;
   deleted_at: Timestamp | null;
+  delivery_purged_at: Timestamp | null;
   description: string | null;
   detected_format: string | null;
   duration_ms: number | null;
@@ -333,8 +334,10 @@ export interface Videos {
   football_present: boolean | null;
   height: number | null;
   id: string;
+  max_duration_ms: number | null;
   moderation: string | null;
   original_key: string;
+  original_purged_at: Timestamp | null;
   owner_user_id: string;
   playback_key: string | null;
   players_visible: number | null;
@@ -369,6 +372,12 @@ export interface VideoViews {
   viewer_key: string;
 }
 
+export interface RateLimitHits {
+  count: number;
+  key: string;
+  reset_at: Timestamp;
+}
+
 export interface DB {
   age_records: AgeRecords;
   audit_logs: AuditLogs;
@@ -391,6 +400,7 @@ export interface DB {
   player_profiles: PlayerProfiles;
   privacy_settings: PrivacySettings;
   profiles: Profiles;
+  rate_limit_hits: RateLimitHits;
   regions: Regions;
   reports: Reports;
   saves: Saves;

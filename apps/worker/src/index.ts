@@ -10,3 +10,4 @@ export * from './storage/storage.js';
 export * from './storage/s3.js';
 export * from './storage/local.js';
 export * from './worker.js';
+export * from './maintenance.js';

@@ -6,10 +6,12 @@ import { isMinor } from '@fp/domain';
 import type { Actor } from '@fp/domain';
 import type { Database, DB } from '@fp/db';
 import type { Transaction } from 'kysely';
+import type { FastifyBaseLogger } from 'fastify';
 import type { Deps } from '../deps.js';
 import { route } from '../platform/route.js';
 import { ApiError, conflict, notFound } from '../platform/errors.js';
 import { newId } from '../platform/ids.js';
+import { mediaUrl } from '../platform/storage.js';
 import { audit, emit, enqueue } from '../platform/events.js';
 import { canSeeInternals, relationTo } from './views.js';
 import { decodeCursor, encodeCursor } from '../platform/cursor.js';
@@ -113,7 +115,7 @@ export async function toVideoViews(deps: Deps, viewer: Actor | null, rows: Video
       id: r.id,
       owner: {
         userId: r.owner_user_id, handle: r.handle, displayName: r.display_name,
-        avatarUrl: r.avatar_key ? `${cdn}/${r.avatar_key}` : null, verified: r.verified_at !== null, isDemo: r.is_demo,
+        avatarUrl: r.avatar_key ? mediaUrl(cdn, r.avatar_key) : null, verified: r.verified_at !== null, isDemo: r.is_demo,
       },
       status: r.status as never,
       statusReason: internals ? r.status_reason : null,
@@ -130,8 +132,8 @@ export async function toVideoViews(deps: Deps, viewer: Actor | null, rows: Video
         .sort((a, b) => (a.source === b.source ? a.sort_order - b.sort_order : a.source === 'user' ? -1 : 1))
         .map((t) => ({ skill: t.skill_key as never, name: t.names as { en: string; ar: string }, source: t.source as 'ai' | 'user', confidence: t.source === 'ai' && t.confidence !== null ? Number(t.confidence) : null })),
       hashtags: hashtags.filter((h) => h.video_id === r.id).map((h) => h.tag),
-      playbackUrl: r.status === 'published' || (internals && r.playback_key) ? (r.playback_key ? `${cdn}/${r.playback_key}` : null) : null,
-      thumbnailUrl: r.thumbnail_key ? `${cdn}/${r.thumbnail_key}` : null,
+      playbackUrl: r.status === 'published' || (internals && r.playback_key) ? (r.playback_key ? mediaUrl(cdn, r.playback_key) : null) : null,
+      thumbnailUrl: r.thumbnail_key ? mediaUrl(cdn, r.thumbnail_key) : null,
       durationMs: r.duration_ms,
       likes: likes.get(r.id) ?? 0,
       comments: comments.get(r.id) ?? 0,
@@ -195,6 +197,41 @@ async function viewOf(deps: Deps, viewer: Actor, videoId: string) {
   return (await toVideoViews(deps, viewer, [row]))[0]!;
 }
 
+/** Caps how many live videos a player keeps and how many uploads they start per day, to bound storage and processing cost. */
+export async function checkUploadQuota(deps: Deps, userId: string): Promise<void> {
+  const { MAX_ACTIVE_VIDEOS, MAX_UPLOADS_PER_DAY } = deps.config;
+  const since = new Date(deps.now().getTime() - 24 * 60 * 60 * 1000);
+  const row = await deps.db
+    .selectFrom('videos')
+    .select([
+      sql<number>`count(*) filter (where status not in ('deleted', 'rejected', 'failed'))::int`.as('active'),
+      sql<number>`count(*) filter (where created_at >= ${since})::int`.as('today'),
+    ])
+    .where('owner_user_id', '=', userId)
+    .executeTakeFirstOrThrow();
+  if (row.active >= MAX_ACTIVE_VIDEOS) {
+    throw new ApiError(403, 'QUOTA_ACTIVE_VIDEOS', `you already have ${MAX_ACTIVE_VIDEOS} videos; delete one to upload another`);
+  }
+  if (row.today >= MAX_UPLOADS_PER_DAY) {
+    throw new ApiError(429, 'QUOTA_DAILY_UPLOADS', `you can start ${MAX_UPLOADS_PER_DAY} uploads per day; try again tomorrow`);
+  }
+}
+
+/**
+ * Nudges the serverless worker so processing starts right away instead of at the next scheduled run.
+ * Best effort: the job is already queued, so failures are only logged. The request is cut short on purpose;
+ * the worker keeps running after the caller disconnects.
+ */
+export async function wakeWorker(deps: Deps, log: FastifyBaseLogger): Promise<void> {
+  const { WORKER_TRIGGER_URL: url, WORKER_TRIGGER_SECRET: secret } = deps.config;
+  if (!url || !secret) return;
+  try {
+    await fetch(url, { method: 'POST', headers: { authorization: `Bearer ${secret}` }, signal: AbortSignal.timeout(1500) });
+  } catch (err) {
+    if ((err as Error).name !== 'TimeoutError') log.warn({ err }, 'worker trigger failed');
+  }
+}
+
 export const mediaRoutes = [
   route(
     { method: 'post', path: '/v1/uploads', summary: 'Start an upload; returns a signed URL for the original', tag: 'videos', auth: 'user', body: CreateUploadRequest, response: CreateUploadResponse, status: 201, rateLimit: { max: 20, timeWindow: '1 hour' } },
@@ -207,6 +244,7 @@ export const mediaRoutes = [
         const now = ctx.deps.now();
         if (!ch || ch.starts_at > now || ch.ends_at < now) throw new ApiError(400, 'CHALLENGE_NOT_OPEN', 'this challenge is not open');
       }
+      await checkUploadQuota(ctx.deps, me.userId);
       const videoId = newId();
       const key = `originals/${me.userId}/${videoId}.${EXTENSIONS[b.contentType]}`;
       const upload = await ctx.deps.storage.presignPut(key, b.contentType, b.sizeBytes);
@@ -228,6 +266,7 @@ export const mediaRoutes = [
           region_id: region?.region_id ?? null,
           trim_start_ms: b.trimStartMs ?? null,
           trim_end_ms: b.trimEndMs ?? null,
+          max_duration_ms: ctx.deps.config.MAX_VIDEO_SECONDS * 1000,
         }).execute();
         await replaceHashtags(tx, videoId, b.hashtags);
         if (b.skillKey) await tx.insertInto('video_skills').values({ video_id: videoId, skill_key: b.skillKey, source: 'user' }).execute();
@@ -251,6 +290,7 @@ export const mediaRoutes = [
         await tx.updateTable('videos').set({ status: 'processing' }).where('id', '=', video.id).execute();
         await enqueue(tx, 'video.process', { videoId: video.id });
       });
+      await wakeWorker(ctx.deps, ctx.req.log);
       return viewOf(ctx.deps, me, video.id);
     },
   ),
