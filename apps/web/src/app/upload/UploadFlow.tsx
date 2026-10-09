@@ -15,7 +15,8 @@ import {
 import { errorMessage } from '@/lib/errors';
 import { formatBytes, formatDuration } from '@/lib/format';
 import { useI18n } from '@/lib/i18n/provider';
-import type { CreateUploadRequest, Foot, Position, SkillKey, VideoContentType, VideoContext, VideoStatus, VideoView, Visibility } from '@/lib/types';
+import { useApi } from '@/lib/useApi';
+import type { CreateUploadRequest, CreateUploadResponse, Foot, Position, SkillKey, VideoContentType, VideoContext, VideoStatus, VideoView, Visibility } from '@/lib/types';
 
 const TOTAL = 10;
 const ACTIVE_STATUSES: VideoStatus[] = ['uploading', 'processing', 'analyzing', 'review_required'];
@@ -31,13 +32,29 @@ export function detectContentType(file: { type: string; name: string }): VideoCo
   return null;
 }
 
+function newEntryKey(): string {
+  const c = globalThis.crypto;
+  if (c?.randomUUID) return c.randomUUID().replace(/-/g, '');
+  return `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 12)}`;
+}
+
 type Phase = { kind: 'edit' } | { kind: 'sending'; progress: number } | { kind: 'tracking'; video: VideoView } | { kind: 'error'; message: string; videoId: string | null };
 
 export function UploadFlow() {
-  const { t, fmt } = useI18n();
+  const { t, fmt, pick } = useI18n();
   const { status: authStatus, me, isPlayer } = useAuth();
   const params = useSearchParams();
   const challengeId = params.get('challenge') ?? undefined;
+  // With a challenge slug the clip is sent as a challenge entry (moderated, then judged) instead of a plain upload.
+  const challengeSlug = params.get('slug') ?? undefined;
+  const ch = useApi((s) => api.challenge(challengeSlug!, s), [challengeSlug], { enabled: !!challengeSlug });
+  const challenge = ch.status === 'success' ? ch.data : null;
+  const [claimed, setClaimed] = useState('');
+  const [othersInClip, setOthersInClip] = useState(false);
+  const [consentOthers, setConsentOthers] = useState(false);
+  const [safetyAck, setSafetyAck] = useState(false);
+  // One key per clip: a retried request returns the same entry instead of using another attempt.
+  const entryKey = useRef<string | null>(null);
 
   const [step, setStep] = useState(1);
   const [file, setFile] = useState<File | null>(null);
@@ -100,6 +117,7 @@ export function UploadFlow() {
     if (url) URL.revokeObjectURL(url);
     setFile(f);
     setUrl(URL.createObjectURL(f));
+    entryKey.current = null;
     setDurationMs(null);
     setMetaFailed(false);
     setTrim([0, 0]);
@@ -128,8 +146,12 @@ export function UploadFlow() {
 
   const trimmed = durationMs !== null && (trim[0] > 0 || trim[1] < durationMs);
 
+  const challengeReady = !challengeSlug || (!!challenge
+    && (!challenge.needsSafetyAck || safetyAck)
+    && (!(othersInClip || challenge.requiresPartner) || consentOthers));
+
   const publish = async () => {
-    if (!file || !contentType || !rightsConfirmed) return;
+    if (!file || !contentType || !rightsConfirmed || !challengeReady) return;
     const body: CreateUploadRequest = {
       rightsConfirmed: true,
       contentType,
@@ -151,10 +173,28 @@ export function UploadFlow() {
     abortRef.current = ctrl;
     try {
       setPhase({ kind: 'sending', progress: 0 });
-      const created = await api.createUpload(body);
-      videoId = created.videoId;
-      await putSignedUpload(created.upload, file, (p) => setPhase({ kind: 'sending', progress: p }), ctrl.signal);
-      const video = await api.completeUpload(created.videoId);
+      let upload: CreateUploadResponse['upload'] | null;
+      if (challengeSlug) {
+        entryKey.current ??= newEntryKey();
+        const { challengeId: _omit, ...details } = body;
+        const claimedValue = claimed.trim() === '' ? undefined : Number(claimed);
+        const created = await api.submitChallengeEntry(challengeSlug, {
+          ...details,
+          idempotencyKey: entryKey.current,
+          claimedValue: claimedValue !== undefined && Number.isFinite(claimedValue) ? claimedValue : undefined,
+          othersInClip: othersInClip || !!challenge?.requiresPartner,
+          consentOthers,
+          safetyAck,
+        });
+        videoId = created.videoId;
+        upload = created.upload;
+      } else {
+        const created = await api.createUpload(body);
+        videoId = created.videoId;
+        upload = created.upload;
+      }
+      if (upload) await putSignedUpload(upload, file, (p) => setPhase({ kind: 'sending', progress: p }), ctrl.signal);
+      const video = upload ? await api.completeUpload(videoId) : await api.video(videoId);
       setPhase({ kind: 'tracking', video });
     } catch (e) {
       if (e instanceof DOMException && e.name === 'AbortError') return;
@@ -184,10 +224,12 @@ export function UploadFlow() {
     return (
       <div className="wrap wrap--narrow page">
         <PageHead title={t.upload.progressTitle} intro={title} />
+        {challengeSlug && phase.kind === 'tracking' ? <p className="notice notice--accent" role="status">{t.challenges.entrySubmitted}</p> : null}
         <UploadStatus phase={phase} onRetry={phase.kind === 'error' && !phase.videoId ? publish : undefined}
           onTagsUpdated={(video) => setPhase({ kind: 'tracking', video })} />
         <div className="cta-row">
-          {phase.kind === 'tracking' && phase.video.status === 'published' ? <ButtonLink href={`/v/${phase.video.id}`} variant="primary">{t.upload.viewVideo}</ButtonLink> : null}
+          {challengeSlug && phase.kind === 'tracking' ? <ButtonLink href={`/challenges/${encodeURIComponent(challengeSlug)}`} variant="primary">{t.challenges.backToChallenge}</ButtonLink> : null}
+          {phase.kind === 'tracking' && phase.video.status === 'published' ? <ButtonLink href={`/v/${phase.video.id}`} variant={challengeSlug ? 'secondary' : 'primary'}>{t.upload.viewVideo}</ButtonLink> : null}
           {phase.kind !== 'sending' ? <Button onClick={reset}>{t.upload.startOver}</Button> : null}
         </div>
       </div>
@@ -204,7 +246,7 @@ export function UploadFlow() {
         {stepNames.map((n, i) => <span key={n} className={i + 1 < step ? 'is-done' : i + 1 === step ? 'is-current' : ''} />)}
       </div>
       {authStatus === 'unconfigured' ? <AuthNotConfigured /> : null}
-      {challengeId ? <p className="notice notice--accent">{t.upload.challengeNote}</p> : null}
+      {challengeId || challengeSlug ? <p className="notice notice--accent">{challenge ? `${t.upload.challengeNote} ${pick(challenge.title)}` : t.upload.challengeNote}</p> : null}
 
       <section className="card" aria-labelledby="step-title" data-testid="upload-step">
         <h2 id="step-title" className="section-title">{stepNames[step - 1]}</h2>
@@ -374,6 +416,39 @@ export function UploadFlow() {
               <span className="field__hint">{t.upload.rightsHint} <a className="link" href="/legal/copyright">{t.legal.copyright}</a></span>
               {!rightsConfirmed ? <span className="small muted">{t.upload.rightsRequired}</span> : null}
             </fieldset>
+            {challenge ? (
+              <fieldset className="stack stack--tight" style={{ border: 0, padding: 0, margin: 0 }} data-testid="challenge-entry">
+                <legend className="field__label">{pick(challenge.title)}</legend>
+                {challenge.rubric?.method === 'measured' ? (
+                  <label className="field">
+                    <span className="field__label">{fmt(t.challenges.claimedLabel, { unit: t.challenges.units[challenge.rubric.unit] })}</span>
+                    <input className="input" type="number" inputMode="numeric" min={0} step="any" value={claimed} onChange={(e) => setClaimed(e.target.value)} />
+                    <span className="field__hint">{t.challenges.claimedHint}</span>
+                  </label>
+                ) : null}
+                {!challenge.requiresPartner ? (
+                  <label className={`check-row${othersInClip ? ' is-checked' : ''}`}>
+                    <input type="checkbox" checked={othersInClip} onChange={(e) => setOthersInClip(e.target.checked)} />
+                    <span>{t.challenges.othersInClip}</span>
+                  </label>
+                ) : null}
+                {othersInClip || challenge.requiresPartner ? (
+                  <label className={`check-row${consentOthers ? ' is-checked' : ''}`}>
+                    <input type="checkbox" checked={consentOthers} onChange={(e) => setConsentOthers(e.target.checked)} />
+                    <span>{t.challenges.consentOthers}</span>
+                  </label>
+                ) : null}
+                {challenge.needsSafetyAck ? (
+                  <>
+                    {challenge.safetyNotes ? <p className="small" dir="auto">{pick(challenge.safetyNotes)}</p> : null}
+                    <label className={`check-row${safetyAck ? ' is-checked' : ''}`}>
+                      <input type="checkbox" checked={safetyAck} onChange={(e) => setSafetyAck(e.target.checked)} />
+                      <span>{t.challenges.safetyAck}</span>
+                    </label>
+                  </>
+                ) : null}
+              </fieldset>
+            ) : null}
             <p className="field__hint">{t.upload.checksNote}</p>
             {authStatus === 'signed_out' ? <p className="notice notice--warn">{t.upload.loginRequired} <a className="link" href="/login">{t.common.logIn}</a></p> : null}
             {me && !isPlayer ? <p className="notice notice--warn">{t.upload.playerRoleRequired}</p> : null}
@@ -388,7 +463,7 @@ export function UploadFlow() {
           {step < TOTAL ? (
             <Button variant="primary" onClick={() => setStep((s) => Math.min(TOTAL, s + 1))} disabled={!canNext[step]}>{t.common.next}</Button>
           ) : (
-            <Button variant="primary" size="lg" onClick={publish} disabled={authStatus !== 'signed_in' || !file || !contentType || !rightsConfirmed}>{t.upload.publish}</Button>
+            <Button variant="primary" size="lg" onClick={publish} disabled={authStatus !== 'signed_in' || !file || !contentType || !rightsConfirmed || !challengeReady}>{t.upload.publish}</Button>
           )}
         </div>
       </div>

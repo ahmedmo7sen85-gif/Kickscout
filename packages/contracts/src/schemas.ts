@@ -305,6 +305,12 @@ export const RadarPage = z.object({
   items: z.array(z.object({ player: PlayerCard, reasons: z.array(z.object({ code: z.string(), text: Bilingual })) })),
 });
 
+export const ChallengeStatus = z.enum(['draft', 'scheduled', 'active', 'judging', 'completed', 'archived', 'paused', 'cancelled']);
+export const ChallengePhase = z.enum(['draft', 'upcoming', 'open', 'judging', 'completed', 'paused', 'cancelled', 'archived']);
+export const ChallengeFormat = z.enum(['standard', 'daily', 'weekly', 'monthly_cup', 'beat_my_skill']);
+export const ChallengeCategory = z.enum(['ball_control', 'dribbling', 'first_touch', 'freestyle', 'shooting', 'weak_foot', 'combo']);
+export const ChallengeDifficulty = z.enum(['beginner', 'intermediate', 'advanced', 'expert']);
+/** A challenge card: what a list shows. */
 export const ChallengeView = z.object({
   id: Id,
   slug: z.string(),
@@ -313,12 +319,30 @@ export const ChallengeView = z.object({
   skill: SkillKey.nullable(),
   hashtag: z.string().nullable(),
   startsAt: z.iso.datetime(),
+  /** The submission deadline. */
   endsAt: z.iso.datetime(),
+  /** Kept for older clients; `phase` is the full picture. */
   state: z.enum(['upcoming', 'active', 'ended']),
+  phase: ChallengePhase,
+  format: ChallengeFormat,
+  category: ChallengeCategory,
+  difficulty: ChallengeDifficulty,
+  ageGroups: z.array(AgeBand),
+  featured: z.boolean(),
+  /** Non-cash recognition, when configured. */
+  reward: Bilingual.nullable(),
+  thumbnailUrl: z.string().nullable(),
+  /** IANA time zone the dates are shown in. */
+  timezone: z.string(),
+  /** Players who joined. */
+  participants: z.number().int(),
+  /** Approved public entries. */
   entries: z.number().int(),
+  votingEnabled: z.boolean(),
   isDemo: z.boolean(),
 });
 export const ChallengeList = z.object({ items: z.array(ChallengeView) });
+/** The original minimal admin form still works: everything else has a default (see AdminChallengeInput). */
 export const CreateChallengeRequest = z.object({
   slug: z.string().regex(/^[a-z0-9-]{3,60}$/),
   title: Bilingual,
@@ -328,7 +352,6 @@ export const CreateChallengeRequest = z.object({
   startsAt: z.iso.datetime(),
   endsAt: z.iso.datetime(),
 });
-export const EnterChallengeRequest = z.object({ videoId: Id });
 
 export const DiscoverView = z.object({
   skills: z.array(SkillView.extend({ videos: z.number().int() })),
@@ -521,6 +544,17 @@ export const AccountExport = z.object({
     xp: z.number().int(),
     level: z.number().int(),
     awards: z.array(z.object({ source: z.string(), ref: z.string(), xp: z.number().int(), at: z.iso.datetime() })),
+  }).nullable().default(null),
+  /** Challenges: entries with their states and scores, votes given, appeals and badges. */
+  challenges: z.object({
+    participations: z.array(z.object({ challengeSlug: z.string(), status: z.string(), joinedAt: z.iso.datetime() })),
+    submissions: z.array(z.object({
+      id: Id, challengeSlug: z.string(), videoId: Id, attemptNo: z.number().int(), state: z.string(), claimedValue: z.number().nullable(),
+      score: z.number().nullable(), createdAt: z.iso.datetime(),
+    })),
+    votes: z.array(z.object({ submissionId: Id, at: z.iso.datetime() })),
+    appeals: z.array(z.object({ submissionId: Id, reason: z.string(), status: z.string(), createdAt: z.iso.datetime() })),
+    badges: z.array(z.object({ badge: z.string(), challengeSlug: z.string().nullable(), at: z.iso.datetime() })),
   }).nullable().default(null),
   scout: z.object({
     shortlists: z.array(z.object({ id: Id, name: z.string(), playerIds: z.array(Id), createdAt: z.iso.datetime() })),

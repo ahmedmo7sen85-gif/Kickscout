@@ -102,24 +102,238 @@ export interface Blocks {
   created_at: Generated<Timestamp>;
 }
 
+export interface ChallengeAgentRuns {
+  agent: string;
+  agent_version: string;
+  confidence: Numeric | null;
+  cost_usd_micros: Generated<Int8>;
+  created_at: Generated<Timestamp>;
+  detail: Generated<Json>;
+  id: Generated<Int8>;
+  latency_ms: number;
+  model: string | null;
+  outcome: string;
+  provider: string | null;
+  subject_id: string | null;
+  subject_kind: string | null;
+  trace_id: string;
+}
+
+export interface ChallengeAppeals {
+  created_at: Generated<Timestamp>;
+  id: string;
+  reason: string;
+  resolution: string | null;
+  resolved_at: Timestamp | null;
+  resolved_by: string | null;
+  status: Generated<string>;
+  submission_id: string;
+  user_id: string;
+}
+
+export interface ChallengeAuditLogs {
+  action: string | null;
+  actor_id: string | null;
+  created_at: Timestamp | null;
+  id: Int8 | null;
+  metadata: Json | null;
+  target_id: string | null;
+  target_kind: string | null;
+}
+
+export interface ChallengeBadges {
+  description: Json;
+  icon: Generated<string>;
+  key: string;
+  name: Json;
+  sort: Generated<number>;
+}
+
 export interface ChallengeEntries {
   challenge_id: string;
   created_at: Generated<Timestamp>;
   video_id: string;
 }
 
-export interface Challenges {
+export interface ChallengeHeadToHeads {
+  challenge_id: string;
+  challenger_id: string;
+  completed_at: Timestamp | null;
+  created_at: Generated<Timestamp>;
+  id: string;
+  opponent_id: string;
+  responded_at: Timestamp | null;
+  status: Generated<string>;
+  winner_id: string | null;
+}
+
+export interface ChallengeJudges {
+  added_by: string | null;
+  challenge_id: string;
+  created_at: Generated<Timestamp>;
+  user_id: string;
+}
+
+export interface ChallengeLeaderboardSnapshots {
+  challenge_id: string;
+  computed_at: Generated<Timestamp>;
+  computed_by: string | null;
+  entries: Json;
+  id: Generated<Int8>;
+  kind: string;
+  rubric_version_id: string;
+  scope: string;
+}
+
+export interface ChallengeNotifications {
+  created_at: Generated<Timestamp>;
+  dedupe_key: string;
+  kind: string;
+  notification_id: string | null;
+  user_id: string;
+}
+
+export interface ChallengeParticipations {
+  challenge_id: string;
+  id: string;
+  invited_by: string | null;
+  joined_at: Generated<Timestamp>;
+  safety_ack_at: Timestamp | null;
+  status: Generated<string>;
+  user_id: string;
+}
+
+export interface ChallengeRubricVersions {
+  challenge_id: string;
   created_at: Generated<Timestamp>;
   created_by: string | null;
+  frozen_at: Timestamp | null;
+  id: string;
+  method: string;
+  rubric: Json;
+  version: number;
+}
+
+export interface ChallengeRules {
+  body: Json;
+  challenge_id: string;
+  id: string;
+  kind: string;
+  sort: Generated<number>;
+}
+
+export interface Challenges {
+  age_groups: Generated<string[]>;
+  attempt_limit: Generated<number>;
+  category: Generated<string>;
+  created_at: Generated<Timestamp>;
+  created_by: string | null;
+  demo_video_id: string | null;
   description: Json;
+  difficulty: Generated<string>;
   ends_at: Timestamp;
+  equipment: Generated<Json>;
+  featured: Generated<boolean>;
+  format: Generated<string>;
   hashtag: string | null;
   id: string;
+  instructions: Generated<Json>;
   is_demo: Generated<boolean>;
+  is_template: Generated<boolean>;
+  max_duration_s: Generated<number>;
+  min_duration_s: Generated<number>;
+  recording: Generated<Json>;
+  requires_partner: Generated<boolean>;
+  results_published_at: Timestamp | null;
+  retry_failed: Generated<boolean>;
+  reward: Json | null;
+  rubric_version_id: string | null;
+  safety_notes: Json | null;
   skill_key: string | null;
   slug: string;
   starts_at: Timestamp;
+  status: Generated<string>;
+  template_key: string | null;
+  thumbnail_key: string | null;
+  timezone: Generated<string>;
   title: Json;
+  updated_at: Generated<Timestamp>;
+  visibility: Generated<string>;
+  voting_enabled: Generated<boolean>;
+}
+
+export interface ChallengeScoreComponents {
+  key: string;
+  score_id: string;
+  value: Numeric;
+}
+
+export interface ChallengeScores {
+  confidence: Numeric | null;
+  created_at: Generated<Timestamp>;
+  evidence: Generated<Json>;
+  id: string;
+  judges: Generated<string[]>;
+  method: string;
+  penalties: Generated<Numeric>;
+  review_status: Generated<string>;
+  rubric_version_id: string;
+  submission_id: string;
+  superseded_at: Timestamp | null;
+  value: Numeric;
+}
+
+export interface ChallengeScoutPicks {
+  challenge_id: string;
+  created_at: Generated<Timestamp>;
+  scout_id: string;
+  submission_id: string;
+}
+
+export interface ChallengeSubmissionReviews {
+  agent: string | null;
+  components: Json | null;
+  created_at: Generated<Timestamp>;
+  decision: string;
+  evidence: Generated<Json>;
+  id: string;
+  kind: string;
+  notes: string | null;
+  reviewer_id: string | null;
+  round: Generated<number>;
+  submission_id: string;
+  value: Numeric | null;
+}
+
+export interface ChallengeSubmissions {
+  approved_at: Timestamp | null;
+  attempt_no: number;
+  challenge_id: string;
+  claimed_value: Numeric | null;
+  consent_others_at: Timestamp | null;
+  created_at: Generated<Timestamp>;
+  id: string;
+  idempotency_key: string | null;
+  judging_round: Generated<number>;
+  participation_id: string;
+  rubric_version_id: string;
+  safety_ack_at: Timestamp | null;
+  state: Generated<string>;
+  state_reason: string | null;
+  target_submission_id: string | null;
+  updated_at: Generated<Timestamp>;
+  user_id: string;
+  verification: Json | null;
+  video_id: string;
+}
+
+export interface ChallengeVotes {
+  challenge_id: string;
+  created_at: Generated<Timestamp>;
+  eligible: Generated<boolean>;
+  flag_reason: string | null;
+  submission_id: string;
+  voter_id: string;
 }
 
 export interface CheckoutSessions {
@@ -458,6 +672,15 @@ export interface PlayChallenges {
   winner_id: string | null;
 }
 
+export interface PlayerProfiles {
+  created_at: Generated<Timestamp>;
+  height_cm: number | null;
+  preferred_foot: string | null;
+  primary_position: string | null;
+  secondary_positions: Generated<string[]>;
+  user_id: string;
+}
+
 export interface PlayRounds {
   challenge_id: string | null;
   completed_at: Timestamp | null;
@@ -478,15 +701,6 @@ export interface PlayXp {
   source: string;
   user_id: string;
   xp: number;
-}
-
-export interface PlayerProfiles {
-  created_at: Generated<Timestamp>;
-  height_cm: number | null;
-  preferred_foot: string | null;
-  primary_position: string | null;
-  secondary_positions: Generated<string[]>;
-  user_id: string;
 }
 
 export interface PrivacySettings {
@@ -655,6 +869,15 @@ export interface UsageCounters {
   user_id: string;
 }
 
+export interface UserChallengeBadges {
+  awarded_at: Generated<Timestamp>;
+  badge_key: string;
+  challenge_id: string | null;
+  id: string;
+  submission_id: string | null;
+  user_id: string;
+}
+
 export interface UserRoles {
   granted_at: Generated<Timestamp>;
   granted_by: string | null;
@@ -757,7 +980,24 @@ export interface DB {
   billing_customers: BillingCustomers;
   billing_events: BillingEvents;
   blocks: Blocks;
+  challenge_agent_runs: ChallengeAgentRuns;
+  challenge_appeals: ChallengeAppeals;
+  challenge_audit_logs: ChallengeAuditLogs;
+  challenge_badges: ChallengeBadges;
   challenge_entries: ChallengeEntries;
+  challenge_head_to_heads: ChallengeHeadToHeads;
+  challenge_judges: ChallengeJudges;
+  challenge_leaderboard_snapshots: ChallengeLeaderboardSnapshots;
+  challenge_notifications: ChallengeNotifications;
+  challenge_participations: ChallengeParticipations;
+  challenge_rubric_versions: ChallengeRubricVersions;
+  challenge_rules: ChallengeRules;
+  challenge_score_components: ChallengeScoreComponents;
+  challenge_scores: ChallengeScores;
+  challenge_scout_picks: ChallengeScoutPicks;
+  challenge_submission_reviews: ChallengeSubmissionReviews;
+  challenge_submissions: ChallengeSubmissions;
+  challenge_votes: ChallengeVotes;
   challenges: Challenges;
   checkout_sessions: CheckoutSessions;
   comments: Comments;
@@ -809,6 +1049,7 @@ export interface DB {
   skills: Skills;
   subscriptions: Subscriptions;
   usage_counters: UsageCounters;
+  user_challenge_badges: UserChallengeBadges;
   user_roles: UserRoles;
   users: Users;
   verification_requests: VerificationRequests;

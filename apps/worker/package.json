@@ -21,6 +21,10 @@
     "./analytics": {
       "types": "./dist/analytics.d.ts",
       "default": "./dist/analytics.js"
+    },
+    "./challenges": {
+      "types": "./dist/challenges/index.d.ts",
+      "default": "./dist/challenges/index.js"
     }
   },
   "scripts": {

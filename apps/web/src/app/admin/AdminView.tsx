@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useState, type FormEvent } from 'react';
+import { useState } from 'react';
 import { AuthGate } from '@/components/AuthGate';
 import { PageHead, Section } from '@/components/PageHead';
 import { Button } from '@/components/ui/Button';
@@ -11,11 +11,10 @@ import { Tabs } from '@/components/ui/Tabs';
 import { useToast } from '@/components/ui/Toast';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
-import { normalizeHashtag, SKILL_KEYS } from '@/lib/constants';
 import { errorMessage } from '@/lib/errors';
 import { useI18n } from '@/lib/i18n/provider';
 import { useApi } from '@/lib/useApi';
-import type { AiUsageView, ModerationCaseView, ModerationDecisionRequest, SkillKey } from '@/lib/types';
+import type { AiUsageView, ModerationCaseView, ModerationDecisionRequest } from '@/lib/types';
 
 /** Upheld claims on this many distinct videos flag the owner as a repeat infringer (a prompt for review, not an automatic ban). */
 const REPEAT_INFRINGER_STRIKES = 3;
@@ -37,12 +36,15 @@ function Gate() {
   if (!isStaff) return <EmptyState icon="shield" title={t.admin.forbiddenTitle} text={t.admin.forbiddenText} />;
   return (
     <div className="stack stack--loose">
-      <p><Link href="/admin/metrics" className="link">{t.admin.metricsLink}</Link></p>
+      <p className="row">
+        <Link href="/admin/metrics" className="link">{t.admin.metricsLink}</Link>
+        <Link href="/admin/challenges" className="link">{t.challenges.adminTitle}</Link>
+        <Link href="/judge" className="link">{t.challenges.judgeQueueLink}</Link>
+      </p>
       <Stats />
       <Moderation />
       <AiUsage />
       <Verifications />
-      <CreateChallenge />
       <Audit />
     </div>
   );
@@ -243,52 +245,6 @@ function Verifications() {
           ))}
         </ul>
       ) : null}
-    </Section>
-  );
-}
-
-function CreateChallenge() {
-  const { t } = useI18n();
-  const toast = useToast();
-  const empty = { slug: '', titleEn: '', titleAr: '', descEn: '', descAr: '', skill: '' as SkillKey | '', hashtag: '', startsAt: '', endsAt: '' };
-  const [f, setF] = useState(empty);
-  const [busy, setBusy] = useState(false);
-  const set = (k: keyof typeof empty) => (e: { target: { value: string } }) => setF({ ...f, [k]: e.target.value });
-  const submit = async (e: FormEvent) => {
-    e.preventDefault();
-    setBusy(true);
-    try {
-      const tag = f.hashtag.trim() ? normalizeHashtag(f.hashtag) : null;
-      await api.createChallenge({
-        slug: f.slug.trim(),
-        title: { en: f.titleEn.trim(), ar: f.titleAr.trim() },
-        description: { en: f.descEn.trim(), ar: f.descAr.trim() },
-        skillKey: f.skill || undefined,
-        hashtag: tag ?? undefined,
-        startsAt: new Date(f.startsAt).toISOString(),
-        endsAt: new Date(f.endsAt).toISOString(),
-      });
-      setF(empty);
-      toast.show(t.admin.challengeCreated, { tone: 'success' });
-    } catch (err) { toast.show(errorMessage(err, t), { tone: 'error' }); } finally { setBusy(false); }
-  };
-  return (
-    <Section title={t.admin.createChallenge} id="a-ch">
-      <form className="card" onSubmit={submit}>
-        <div className="form-grid">
-          <label className="field"><span className="field__label">{t.admin.slug}</span><input className="input" required pattern="[a-z0-9-]{3,60}" value={f.slug} onChange={set('slug')} /></label>
-          <label className="field"><span className="field__label">{t.admin.titleEn}</span><input className="input" required lang="en" dir="ltr" value={f.titleEn} onChange={set('titleEn')} /></label>
-          <label className="field"><span className="field__label">{t.admin.titleAr}</span><input className="input" required lang="ar" dir="rtl" value={f.titleAr} onChange={set('titleAr')} /></label>
-          <label className="field"><span className="field__label">{t.search.skill}</span>
-            <select className="input" value={f.skill} onChange={set('skill')}><option value="">{t.upload.none}</option>{SKILL_KEYS.map((s) => <option key={s} value={s}>{t.skills[s]}</option>)}</select></label>
-          <label className="field"><span className="field__label">{t.challenges.hashtag}</span><input className="input" value={f.hashtag} onChange={set('hashtag')} dir="auto" /></label>
-          <label className="field"><span className="field__label">{t.admin.startsAt}</span><input className="input" type="datetime-local" required value={f.startsAt} onChange={set('startsAt')} /></label>
-          <label className="field"><span className="field__label">{t.admin.endsAt}</span><input className="input" type="datetime-local" required value={f.endsAt} onChange={set('endsAt')} /></label>
-        </div>
-        <label className="field"><span className="field__label">{t.admin.descEn}</span><textarea className="input" rows={2} required lang="en" dir="ltr" value={f.descEn} onChange={set('descEn')} /></label>
-        <label className="field"><span className="field__label">{t.admin.descAr}</span><textarea className="input" rows={2} required lang="ar" dir="rtl" value={f.descAr} onChange={set('descAr')} /></label>
-        <div><Button type="submit" variant="primary" loading={busy}>{t.admin.createChallenge}</Button></div>
-      </form>
     </Section>
   );
 }

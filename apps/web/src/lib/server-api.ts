@@ -1,6 +1,6 @@
 import 'server-only';
 import { publicEnv } from './env';
-import type { SeoProfileView, SitemapView, VideoView } from './types';
+import type { SeoChallengeView, SeoProfileView, SitemapView, VideoView } from './types';
 
 /**
  * Server-side, unauthenticated reads used only for SEO metadata. Failures return null so a page
@@ -41,7 +41,13 @@ export function fetchSeoProfile(handle: string): Promise<SeoProfileView | null> 
   return getJson<SeoProfileView>(`/v1/seo/profiles/${encodeURIComponent(handle)}`, 300);
 }
 
-/** Indexable profiles and videos for sitemap.xml; null when the API is unreachable. */
+/** Public facts for an indexable challenge; null when the SEO agent says it should not be indexed (or the API is down). */
+export function fetchSeoChallenge(slug: string): Promise<SeoChallengeView | null> {
+  if (!/^[a-z0-9-]{3,60}$/.test(slug)) return Promise.resolve(null);
+  return getJson<SeoChallengeView>(`/v1/seo/challenges/${encodeURIComponent(slug)}`, 300);
+}
+
+/** Indexable profiles, videos and challenges for sitemap.xml; null when the API is unreachable. */
 export function fetchSitemap(): Promise<SitemapView | null> {
   return getJson<SitemapView>('/v1/sitemap', 3600);
 }

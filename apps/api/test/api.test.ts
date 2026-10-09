@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { sql } from 'kysely';
+import { syncSubmissionForVideo } from '@fp/worker/challenges';
 import { createTestEnv } from './helpers.js';
 import type { TestEnv } from './helpers.js';
 
@@ -645,7 +646,7 @@ describe('search, discover, Talent Radar and challenges', () => {
     expect(d.body.risingPlayers.map((p: Json) => p.handle)).toContain('nutmeg_king');
   });
 
-  it('runs a challenge: admin creates it, players enter, entries are listed', async () => {
+  it('runs a challenge: admin drafts and publishes it, players enter, judged entries are listed', async () => {
     const body = {
       slug: 'elastico-challenge', title: { en: '#ElasticoChallenge', ar: '#تحدي_الإلاستيكو' }, description: { en: 'Show your best elastico.', ar: 'أرنا أفضل إلاستيكو لديك.' },
       skillKey: 'elastico', hashtag: 'elasticochallenge', startsAt: new Date(Date.now() - 3600_000).toISOString(), endsAt: new Date(Date.now() + 7 * 86400_000).toISOString(),
@@ -653,15 +654,34 @@ describe('search, discover, Talent Radar and challenges', () => {
     expect((await call('POST', '/v1/admin/challenges', { token: star.token, body })).status).toBe(403);
     const created = await call('POST', '/v1/admin/challenges', { token: admin.token, body });
     expect(created.status).toBe(201);
-    expect(created.body).toMatchObject({ state: 'active', entries: 0, isDemo: false });
-    // Upload straight into the challenge, and enter an existing video.
+    expect(created.body).toMatchObject({ status: 'draft', entries: 0, isDemo: false, rubric: { method: 'judged', version: 1, frozen: false } });
+    // A draft is invisible until it is published.
+    expect((await call('GET', '/v1/challenges/elastico-challenge')).status).toBe(404);
+    const published = await call('POST', `/v1/admin/challenges/${created.body.id}/transition`, { token: admin.token, body: { action: 'publish' } });
+    expect(published.body).toMatchObject({ status: 'active', state: 'active', rubric: { frozen: true } });
+    // Upload straight into the challenge, and enter a clip uploaded while it is open.
     const direct = await publishedVideo(star.token, { challengeId: created.body.id });
-    expect((await call('POST', '/v1/challenges/elastico-challenge/entries', { token: star.token, body: { videoId: starVideo } })).status).toBe(204);
-    expect((await call('POST', '/v1/challenges/elastico-challenge/entries', { token: star.token, body: { videoId: starVideo } })).body.code).toBe('ALREADY_ENTERED');
-    expect((await call('POST', '/v1/challenges/elastico-challenge/entries', { token: fans[0]!.token, body: { videoId: starVideo } })).status).toBe(403);
+    const later = await publishedVideo(star.token);
+    const entered = await call('POST', '/v1/challenges/elastico-challenge/entries', { token: star.token, body: { videoId: later } });
+    expect(entered.status).toBe(201);
+    expect((await call('POST', '/v1/challenges/elastico-challenge/entries', { token: star.token, body: { videoId: later } })).body.code).toBe('ALREADY_ENTERED');
+    expect((await call('POST', '/v1/challenges/elastico-challenge/entries', { token: fans[0]!.token, body: { videoId: later } })).status).toBe(403);
+    // A clip uploaded before the challenge started cannot enter.
+    const old = await publishedVideo(star.token);
+    await env.db.updateTable('videos').set({ created_at: new Date(Date.now() - 2 * 3600_000) }).where('id', '=', old).execute();
+    expect((await call('POST', '/v1/challenges/elastico-challenge/entries', { token: star.token, body: { videoId: old } })).body.code).toBe('RECORDED_BEFORE_START');
+    // Nothing is listed before a judge approves it.
+    expect((await call('GET', '/v1/challenges/elastico-challenge/entries')).body.items).toEqual([]);
+    for (const v of [direct, later]) await syncSubmissionForVideo(env.db, v);
+    const queue = await call('GET', '/v1/judge/challenges/queue', { token: admin.token });
+    expect(queue.body.items).toHaveLength(2);
+    for (const item of queue.body.items) {
+      const r = await call('POST', `/v1/judge/challenge-submissions/${item.submissionId}/reviews`, { token: admin.token, body: { decision: 'score', components: { execution: 8, control: 7, difficulty: 6 } } });
+      expect(r.body).toEqual({ state: 'approved', outcome: 'approved' });
+    }
     const entries = await call('GET', '/v1/challenges/elastico-challenge/entries');
-    expect(entries.body.items.map((v: Json) => v.id).sort()).toEqual([direct, starVideo].sort());
-    expect((await call('GET', '/v1/challenges')).body.items[0]).toMatchObject({ slug: 'elastico-challenge', entries: 2 });
+    expect(entries.body.items.map((v: Json) => v.id).sort()).toEqual([direct, later].sort());
+    expect((await call('GET', '/v1/challenges')).body.items.find((c: Json) => c.slug === 'elastico-challenge')).toMatchObject({ entries: 2, participants: 1 });
   });
 
   it('lists the skill taxonomy in English and Arabic', async () => {

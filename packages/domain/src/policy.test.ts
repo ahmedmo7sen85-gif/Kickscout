@@ -25,6 +25,23 @@ describe('can()', () => {
     expect(can(actor({ roles: ['fan'] }), { kind: 'video.upload' }).allowed).toBe(false);
   });
 
+  it('lets staff and assigned judges judge challenge entries, never their own or their child’s', () => {
+    const j = (over: Partial<Actor>, a: Partial<{ assigned: boolean; ownerId: string; clipPublic: boolean }> = {}) =>
+      can(actor(over), { kind: 'challenge.judge', assigned: false, ownerId: 'p', clipPublic: true, ...a });
+    expect(j({ roles: ['moderator'], mfa: true }).allowed).toBe(true);
+    expect(j({ roles: ['moderator'] })).toMatchObject({ code: 'MFA_REQUIRED' });
+    expect(j({ roles: ['fan'], mfa: true })).toMatchObject({ code: 'FORBIDDEN' });
+    expect(j({ roles: ['scout'], mfa: true }, { assigned: true }).allowed).toBe(true);
+    expect(j({ roles: ['scout'], mfa: true }, { assigned: true, clipPublic: false })).toMatchObject({ code: 'FORBIDDEN' });
+    expect(j({ roles: ['admin'], mfa: true }, { ownerId: 'a' })).toMatchObject({ code: 'CONFLICT_OF_INTEREST' });
+    expect(j({ roles: ['admin'], mfa: true, guardianOf: ['p'] })).toMatchObject({ code: 'CONFLICT_OF_INTEREST' });
+  });
+
+  it('lets only verified scouts record a Scout Pick', () => {
+    expect(can(actor({ roles: ['fan', 'scout'] }), { kind: 'challenge.scout_pick' }).allowed).toBe(true);
+    expect(can(actor({ roles: ['player'] }), { kind: 'challenge.scout_pick' })).toMatchObject({ code: 'SCOUT_VERIFICATION_REQUIRED' });
+  });
+
   it('lets only verified scouts use scout tools', () => {
     expect(can(actor({ roles: ['fan'] }), { kind: 'scout.use' })).toMatchObject({ code: 'SCOUT_VERIFICATION_REQUIRED' });
     expect(can(actor({ roles: ['scout'] }), { kind: 'scout.use' }).allowed).toBe(true);

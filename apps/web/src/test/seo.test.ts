@@ -24,11 +24,12 @@ describe('sitemap and robots', () => {
   it('lists only public pages plus what the API marked indexable', () => {
     const fallback = buildSitemap(SITE, null);
     expect(fallback.map((e) => e.url)).toEqual(STATIC_SITEMAP_PATHS.map((p) => (p === '/' ? SITE : `${SITE}${p}`)));
-    const data = { profiles: [{ handle: 'ahmed.10', updatedAt: '2026-10-01T00:00:00.000Z' }], videos: [{ id, updatedAt: '2026-10-02T00:00:00.000Z' }] };
+    const data = { profiles: [{ handle: 'ahmed.10', updatedAt: '2026-10-01T00:00:00.000Z' }], videos: [{ id, updatedAt: '2026-10-02T00:00:00.000Z' }], challenges: [{ slug: 'keepy-uppy-30', updatedAt: '2026-10-03T00:00:00.000Z' }] };
     const urls = buildSitemap(SITE, data).map((e) => e.url);
     expect(urls).toContain(`${SITE}/u/ahmed.10`);
     expect(urls).toContain(`${SITE}/v/${id}`);
-    expect(urls).toHaveLength(STATIC_SITEMAP_PATHS.length + 2);
+    expect(urls).toContain(`${SITE}/challenges/keepy-uppy-30`);
+    expect(urls).toHaveLength(STATIC_SITEMAP_PATHS.length + 3);
     for (const u of urls) for (const p of PRIVATE_PATHS) expect(u.startsWith(`${SITE}${p}`), u).toBe(false);
   });
 

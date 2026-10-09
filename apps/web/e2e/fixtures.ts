@@ -69,3 +69,51 @@ export function posterSvg(n: number): string {
 <rect x="6" y="8" width="78" height="144"/><line x1="6" y1="80" x2="84" y2="80"/><circle cx="45" cy="80" r="16"/></g>
 <circle cx="45" cy="104" r="4" fill="#fff"/></svg>`;
 }
+
+// ---------------------------------------------------------------- challenges
+const challengeCard = (n: number, c: Partial<z.infer<typeof C.ChallengeView>>): z.infer<typeof C.ChallengeView> => ({
+  id: uuid(300 + n), slug: `challenge-${n}`, title: { en: 'Juggling King', ar: 'ملك تنطيط الكرة' },
+  description: { en: 'Most consecutive controlled touches without the ball touching the ground.', ar: 'أكبر عدد من اللمسات المتتالية دون أن تلمس الكرة الأرض.' },
+  skill: 'juggling', hashtag: 'jugglingking', startsAt: '2026-10-05T00:00:00.000Z', endsAt: '2026-10-19T00:00:00.000Z', state: 'active', phase: 'open',
+  format: 'weekly', category: 'ball_control', difficulty: 'beginner', ageGroups: ['u13', 'u16', 'u18', 'adult'], featured: false, reward: null,
+  thumbnailUrl: null, timezone: 'UTC', participants: 42, entries: 17, votingEnabled: true, isDemo: true, ...c,
+});
+
+const juggling = challengeCard(1, { slug: 'juggling-king', featured: true });
+const cones = challengeCard(2, {
+  slug: 'cone-master', title: { en: 'Cone Master', ar: 'سيد الأقماع' }, category: 'dribbling', hashtag: 'conemaster', participants: 18, entries: 9,
+});
+const rainbow = challengeCard(3, {
+  slug: 'rainbow-flick', title: { en: 'Rainbow Flick', ar: 'الرينبو' }, category: 'freestyle', difficulty: 'advanced', format: 'standard', hashtag: 'rainbowflick',
+  participants: 7, entries: 2,
+});
+
+export const challengeHub = C.ChallengeHubView.parse({
+  featured: juggling, trending: [juggling, cones], newest: [rainbow], endingSoon: [cones], beginner: [juggling, cones], advancedFreestyle: [rainbow],
+  upcoming: [], completed: [],
+});
+
+export const challengeDetail = C.ChallengeDetailView.parse({
+  ...juggling,
+  instructions: { en: 'Start with the ball in your hands. Count every controlled touch until the ball hits the ground.', ar: 'ابدأ والكرة في يديك. احسب كل لمسة حتى تسقط الكرة.' },
+  equipment: [{ en: 'A size 4 or 5 football', ar: 'كرة مقاس 4 أو 5' }],
+  safetyNotes: null,
+  recording: { camera: 'side', orientation: 'vertical', continuousTake: true },
+  minDurationS: 5, maxDurationS: 120, attemptLimit: 3, retryFailed: true, requiresPartner: false, needsSafetyAck: false,
+  rules: [{ kind: 'disqualification', body: { en: 'Cuts or edits in the clip.', ar: 'أي قص أو تعديل في المقطع.' } }],
+  rubric: {
+    method: 'measured', unit: 'count', direction: 'higher', version: 1, frozen: true, tieBreakers: ['earliest_submission'], minJudges: 1, tolerance: 2,
+    attempts: null, summary: { en: 'Score = consecutive controlled touches, counted by a judge.', ar: 'النتيجة = عدد اللمسات المتتالية، يحسبها حكم.' },
+    components: [{ key: 'touches', kind: 'measure', label: { en: 'Touches', ar: 'اللمسات' }, max: 100000 }],
+  },
+  demoVideo: null, resultsPublishedAt: null, indexable: true, me: null,
+});
+
+const entry = (rank: number, o: ReturnType<typeof owner>, value: number) => ({
+  rank, submissionId: uuid(400 + rank), videoId: uuid(100 + rank), player: o, value, penalties: 0, country: rank === 1 ? 'EG' : null, thumbnailUrl: null,
+});
+export const challengeLeaderboard = C.LeaderboardView.parse({
+  scope: 'overall', kind: 'live', unit: 'count', direction: 'higher', computedAt: now,
+  entries: [entry(1, a, 214), entry(2, b, 160)], me: null,
+});
+export const challengeEntries = C.VideoPage.parse({ items: [], nextCursor: null });

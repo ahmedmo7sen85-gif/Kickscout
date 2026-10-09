@@ -1,5 +1,7 @@
 import { sql } from 'kysely';
-import { HealthView, ReadyView, SeoProfileView, SitemapView } from '@fp/contracts';
+import { HealthView, ReadyView, SeoChallengeView, SeoProfileView, SitemapView } from '@fp/contracts';
+import { challengeIndexable } from '@fp/domain';
+import { challengeQuery, listable, phaseOf } from './challenge-views.js';
 import { route } from '../platform/route.js';
 import { notFound } from '../platform/errors.js';
 import { mediaUrl } from '../platform/storage.js';
@@ -81,7 +83,9 @@ export const opsRoutes = [
         .where('videos.status', '=', 'published').where('videos.visibility', '=', 'public').where('videos.deleted_at', 'is', null)
         .where('videos.owner_user_id', 'in', indexablePlayers(ctx.deps).select('users.id'))
         .orderBy('videos.published_at', 'desc').limit(SITEMAP_VIDEOS).execute();
+      const challenges = (await indexableChallenges(ctx.deps)).map((c) => ({ slug: c.slug, updatedAt: c.updated_at.toISOString() }));
       return {
+        challenges,
         profiles: players.map((p) => ({ handle: p.handle, updatedAt: p.updated_at.toISOString() })),
         videos: videos.map((v) => ({ id: v.id, updatedAt: (v.published_at ?? v.created_at).toISOString() })),
       };
@@ -102,4 +106,27 @@ export const opsRoutes = [
       };
     },
   ),
+  route(
+    { method: 'get', path: '/v1/seo/challenges/:slug', summary: 'Public facts for a challenge page’s metadata; 404 unless the SEO agent says it is indexable', tag: 'seo', auth: 'none', response: SeoChallengeView },
+    async (ctx) => {
+      const c = (await indexableChallenges(ctx.deps)).find((x) => x.slug === ctx.params.slug);
+      if (!c) throw notFound('challenge');
+      return {
+        slug: c.slug, title: c.title as never, description: c.description as never, phase: phaseOf(c, ctx.deps.now()), startsAt: c.starts_at.toISOString(),
+        endsAt: c.ends_at.toISOString(), hashtag: c.hashtag, thumbnailUrl: c.thumbnail_key ? mediaUrl(ctx.deps.config.CDN_BASE_URL, c.thumbnail_key) : null,
+        updatedAt: c.updated_at.toISOString(),
+      };
+    },
+  ),
 ];
+
+/** SEO Agent: challenges worth indexing (open, judging or completed, public, with enough original copy). */
+async function indexableChallenges(deps: Deps) {
+  const now = deps.now();
+  const rows = await listable(challengeQuery(deps.db)).where('challenges.status', 'in', ['active', 'judging', 'completed']).where('challenges.is_demo', '=', false)
+    .orderBy('challenges.updated_at', 'desc').limit(500).execute();
+  return rows.filter((c) => challengeIndexable({
+    phase: phaseOf(c, now), visibility: c.visibility as 'public' | 'unlisted', isTemplate: c.is_template, isDemo: c.is_demo,
+    title: c.title as never, description: c.description as never, instructions: c.instructions as never,
+  }).index);
+}

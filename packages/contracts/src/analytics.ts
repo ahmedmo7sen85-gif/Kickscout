@@ -54,6 +54,11 @@ export const ANALYTICS_EVENTS = {
   contact_requested: spec(z.object({ contactRequestId: Id, playerId: Id, origin: z.enum(['profile', 'pipeline']) }), { necessary: true }),
   contact_accepted: spec(z.object({ contactRequestId: Id }), { necessary: true }),
   checkout_started: spec(z.object({ planKey: PlanKey, interval: z.enum(['month', 'year']), trial: z.boolean() }), { necessary: true }),
+  challenge_viewed: spec(z.object({ challengeId: Id })),
+  challenge_joined: spec(z.object({ challengeId: Id, invited: z.boolean() })),
+  challenge_submitted: spec(z.object({ challengeId: Id, submissionId: Id })),
+  challenge_entry_approved: spec(z.object({ challengeId: Id, submissionId: Id })),
+  challenge_voted: spec(z.object({ challengeId: Id })),
   subscription_activated: spec(z.object({ planKey: PlanKey, status: z.enum(['trialing', 'active']) }), { necessary: true }),
 
   // ---------------------------------------------------------------- client events (POST /v1/events)
@@ -62,13 +67,14 @@ export const ANALYTICS_EVENTS = {
   locale_changed: spec(z.object({ to: Locale }), { client: true }),
   share_clicked: spec(z.object({ videoId: Id }), { client: true }),
   video_completed: spec(z.object({ videoId: Id, watchedPct: z.number().int().min(0).max(100) }), { client: true }),
+  challenge_shared: spec(z.object({ challengeId: Id, kind: z.enum(['invite', 'result']) }), { client: true }),
 } as const satisfies Record<string, AnalyticsEventSpec>;
 
 export type AnalyticsEventName = keyof typeof ANALYTICS_EVENTS;
 export type AnalyticsProps<N extends AnalyticsEventName> = z.input<(typeof ANALYTICS_EVENTS)[N]['props']>;
 export const ANALYTICS_EVENT_NAMES = Object.keys(ANALYTICS_EVENTS) as AnalyticsEventName[];
 /** The events a browser may send (exactly the registry entries with `client: true`; a unit test keeps them in step). */
-export const CLIENT_EVENT_NAMES = ['page_viewed', 'cta_clicked', 'locale_changed', 'share_clicked', 'video_completed'] as const satisfies readonly AnalyticsEventName[];
+export const CLIENT_EVENT_NAMES = ['page_viewed', 'cta_clicked', 'locale_changed', 'share_clicked', 'video_completed', 'challenge_shared'] as const satisfies readonly AnalyticsEventName[];
 export type ClientEventName = (typeof CLIENT_EVENT_NAMES)[number];
 
 export const isAnalyticsEvent = (name: string): name is AnalyticsEventName => Object.hasOwn(ANALYTICS_EVENTS, name);
@@ -199,6 +205,8 @@ export const ReadyView = z.object({
 export const SitemapView = z.object({
   profiles: z.array(z.object({ handle: z.string(), updatedAt: z.iso.datetime() })),
   videos: z.array(z.object({ id: Id, updatedAt: z.iso.datetime() })),
+  /** Open, judging or completed public challenges with enough content to be useful (see challengeIndexable). */
+  challenges: z.array(z.object({ slug: z.string(), updatedAt: z.iso.datetime() })).default([]),
 });
 export const SeoProfileView = z.object({
   handle: z.string(),

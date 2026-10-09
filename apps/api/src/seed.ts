@@ -9,6 +9,7 @@
  * e.g. promo/01_stepover.mp4 and promo/01_stepover.jpg. Upload the rendered clips there.
  */
 import { createDb } from '@fp/db';
+import { DEFAULT_RUBRIC } from '@fp/domain';
 import { encrypt } from './platform/crypto.js';
 import { newId } from './platform/ids.js';
 
@@ -81,11 +82,19 @@ export async function seed(databaseUrl: string, dobKey: Buffer, mediaPrefix = 'p
       ['freestyle-challenge', '#FreestyleChallenge', '#تحدي_الفريستايل', 'freestyle'],
       ['first-touch-challenge', '#FirstTouchChallenge', '#تحدي_اللمسة_الأولى', 'first_touch'],
     ] as const) {
-      await tx.insertInto('challenges').values({
-        id: newId(), slug, title: JSON.stringify({ en, ar }), skill_key: skill, hashtag: slug.replace(/-/g, ''), is_demo: true,
+      const challengeId = newId();
+      const added = await tx.insertInto('challenges').values({
+        id: challengeId, slug, title: JSON.stringify({ en, ar }), skill_key: skill, hashtag: slug.replace(/-/g, ''), is_demo: true,
         description: JSON.stringify({ en: `Demo challenge. Upload your best ${skill.replace(/_/g, ' ')} clip.`, ar: 'تحدٍ تجريبي. ارفع أفضل مقطع لديك.' }),
-        starts_at: new Date(now - day), ends_at: new Date(now + 30 * day),
-      }).onConflict((oc) => oc.column('slug').doNothing()).execute();
+        starts_at: new Date(now - day), ends_at: new Date(now + 30 * day), status: 'active',
+        category: skill === 'first_touch' ? 'first_touch' : skill === 'elastico' ? 'dribbling' : 'freestyle',
+      }).onConflict((oc) => oc.column('slug').doNothing()).returning('id').executeTakeFirst();
+      if (added) {
+        // A demo challenge is judged like any other, with the default rubric, frozen because it is open.
+        const rubricId = newId();
+        await tx.insertInto('challenge_rubric_versions').values({ id: rubricId, challenge_id: challengeId, version: 1, method: 'judged', rubric: JSON.stringify(DEFAULT_RUBRIC), frozen_at: new Date(now) }).execute();
+        await tx.updateTable('challenges').set({ rubric_version_id: rubricId }).where('id', '=', challengeId).execute();
+      }
     }
   });
   await db.destroy();

@@ -1,6 +1,6 @@
 import { mkdirSync } from 'node:fs';
 import { expect, test, type Page } from '@playwright/test';
-import { feed, MEDIA, posterSvg, radar } from './fixtures';
+import { challengeDetail, challengeEntries, challengeHub, challengeLeaderboard, feed, MEDIA, posterSvg, radar } from './fixtures';
 
 const SHOTS = new URL('../.screenshots/', import.meta.url).pathname;
 mkdirSync(SHOTS, { recursive: true });
@@ -99,7 +99,7 @@ for (const path of ['/home', '/discover', '/radar', '/challenges', '/challenges/
 }
 
 test('pages that need a session explain it instead of crashing', async ({ page }) => {
-  for (const path of ['/scout', '/upload', '/settings', '/notifications', '/admin', '/login']) {
+  for (const path of ['/scout', '/upload', '/settings', '/notifications', '/admin', '/admin/challenges', '/challenges/mine', '/judge', '/login']) {
     const errors = collectErrors(page);
     await page.goto(path);
     await expect(page.locator('main')).toBeVisible();
@@ -146,4 +146,33 @@ test('screenshots: /home, /upload, /radar, /scout', async ({ page }) => {
   await page.goto('/scout');
   await expect(page.getByTestId('scout-gate')).toBeVisible();
   await page.screenshot({ path: `${SHOTS}scout-1440.png`, fullPage: true });
+});
+
+test('challenges: hub sections, detail rules, scoring and leaderboard at 390 and 1440', async ({ page }) => {
+  await page.route(/\/v1\/challenges\/hub/, (r) => r.fulfill({ json: challengeHub }));
+  await page.route(/\/v1\/challenges\/juggling-king\/leaderboard/, (r) => r.fulfill({ json: challengeLeaderboard }));
+  await page.route(/\/v1\/challenges\/juggling-king\/entries/, (r) => r.fulfill({ json: challengeEntries }));
+  await page.route(/\/v1\/challenges\/juggling-king(\?|$)/, (r) => r.fulfill({ json: challengeDetail }));
+  const errors = collectErrors(page);
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/challenges');
+  for (const h of ['Featured', 'Trending', 'Ending soon', 'For beginners', 'Advanced freestyle']) {
+    await expect(page.getByRole('heading', { name: h, exact: true })).toBeVisible();
+  }
+  await expect(page.getByText('No cash prizes, no paid entry, no betting.')).toBeVisible();
+  await page.screenshot({ path: `${SHOTS}challenges-390.png`, fullPage: true });
+
+  await page.goto('/challenges/juggling-king');
+  await expect(page.getByRole('heading', { name: 'Juggling King', level: 1 })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'How it is scored' })).toBeVisible();
+  await expect(page.getByText('Rubric v1, locked when the challenge opened')).toBeVisible();
+  await expect(page.getByText('Votes, views and paid plans never change a score.', { exact: false })).toBeVisible();
+  await expect(page.getByRole('cell', { name: '214 touches' })).toBeVisible();
+  await page.screenshot({ path: `${SHOTS}challenge-detail-390.png`, fullPage: true });
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto('/challenges/juggling-king');
+  await expect(page.getByRole('heading', { name: 'Leaderboard' })).toBeVisible();
+  await page.screenshot({ path: `${SHOTS}challenge-detail-1440.png`, fullPage: true });
+  expect(errors).toEqual([]);
 });

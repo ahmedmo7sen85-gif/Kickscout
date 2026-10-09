@@ -84,10 +84,10 @@ describe('maintenance', () => {
     const keys = (await env.db.selectFrom('rate_limit_hits').select('key').execute()).map((r) => r.key);
     expect(keys).toEqual(['live']);
     // The first run also rolls up the analytics backfill window (35 days); later runs that day have nothing to roll.
-    expect(report).toEqual({ abandonedUploads: 1, originalsPurged: 4, deliveryPurged: 1, rateLimitRowsPruned: 1, alertNotifications: 0, analyticsDaysRolled: 35, analyticsEventsDeleted: 0, errors: 0 });
+    expect(report).toEqual({ abandonedUploads: 1, originalsPurged: 4, deliveryPurged: 1, rateLimitRowsPruned: 1, alertNotifications: 0, analyticsDaysRolled: 35, analyticsEventsDeleted: 0, errors: 0, challenges: expect.any(Object) });
 
     const again = await runMaintenance(env.db, env.storage, silentLog, now, DEFAULT_MAINTENANCE);
-    expect(again).toEqual({ abandonedUploads: 0, originalsPurged: 0, deliveryPurged: 0, rateLimitRowsPruned: 0, alertNotifications: 0, analyticsDaysRolled: 0, analyticsEventsDeleted: 0, errors: 0 });
+    expect(again).toEqual({ abandonedUploads: 0, originalsPurged: 0, deliveryPurged: 0, rateLimitRowsPruned: 0, alertNotifications: 0, analyticsDaysRolled: 0, analyticsEventsDeleted: 0, errors: 0, challenges: expect.any(Object) });
   });
 
   it('keeps going and reports when storage fails for one video', async () => {

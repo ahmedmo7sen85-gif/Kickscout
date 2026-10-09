@@ -5,6 +5,7 @@ import { markVideoFailed, processVideo } from './pipeline.js';
 import type { Logger, PipelineDeps } from './pipeline.js';
 import { claimJob, completeJob, failJob, heartbeat, recoverStaleJobs } from './queue.js';
 import type { JobRow } from './queue.js';
+import { syncSubmissionForVideo } from './challenges/sync.js';
 
 export interface WorkerOptions {
   concurrency: number;
@@ -55,6 +56,15 @@ export class Worker {
           const parsed = VideoJobPayload.safeParse(job.payload);
           if (parsed.success) await markVideoFailed(this.db, parsed.data.videoId, error);
         },
+      },
+      // Queued by a database trigger whenever a challenge entry's video changes status.
+      'challenge.sync': {
+        run: async (job) => {
+          const { videoId } = parsePayload(job);
+          await syncSubmissionForVideo(this.db, videoId, this.log);
+        },
+        // Nothing to undo: the maintenance pass re-syncs any entry left behind.
+        onFailed: async () => {},
       },
     };
   }

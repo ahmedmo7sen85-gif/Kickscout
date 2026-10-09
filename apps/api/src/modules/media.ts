@@ -179,7 +179,7 @@ export async function blockedEitherWay(db: Database, a: string, b: string) {
 }
 
 /** A minor's uploads stay private until a guardian has opened the profile to the public. */
-function effectiveVisibility(me: Actor, requested: 'public' | 'followers' | 'private') {
+export function effectiveVisibility(me: Actor, requested: 'public' | 'followers' | 'private') {
   return isMinor(me.ageBand) && !me.consents.has('public_profile') ? 'private' : requested;
 }
 
@@ -192,7 +192,7 @@ async function ownedVideo(deps: Deps, me: Actor, videoId: string | undefined) {
   return video;
 }
 
-async function replaceHashtags(tx: Transaction<DB>, videoId: string, tags: readonly string[]) {
+export async function replaceHashtags(tx: Transaction<DB>, videoId: string, tags: readonly string[]) {
   await tx.deleteFrom('video_hashtags').where('video_id', '=', videoId).execute();
   const unique = [...new Set(tags)];
   if (unique.length) await tx.insertInto('video_hashtags').values(unique.map((tag) => ({ video_id: videoId, tag }))).execute();
@@ -234,51 +234,85 @@ export async function wakeWorker(deps: Deps, log: FastifyBaseLogger): Promise<vo
   }
 }
 
+export interface UploadFields {
+  contentType: keyof typeof EXTENSIONS | string;
+  sizeBytes: number;
+  title: string;
+  description?: string | undefined;
+  skillKey?: string | undefined;
+  position?: string | undefined;
+  foot?: string | undefined;
+  context?: string | undefined;
+  hashtags: readonly string[];
+  visibility: 'public' | 'followers' | 'private';
+  trimStartMs?: number | undefined;
+  trimEndMs?: number | undefined;
+}
+
+export interface UploadPlan {
+  /** Video category to record (a challenge entry is always `challenge`). */
+  context?: string;
+  /** A tighter length limit than the plan's, e.g. the challenge's maximum. */
+  maxDurationMs?: number;
+  /** Runs inside the transaction that creates the video row (a challenge entry writes its submission here). */
+  inTx?: (tx: Transaction<DB>, videoId: string) => Promise<void>;
+}
+
+/**
+ * Checks the plan quota, signs the upload URL and records the video as `uploading`. The worker takes
+ * over once the client confirms the upload; nothing is public until the safety pipeline publishes it.
+ */
+export async function beginUpload(deps: Deps, me: Actor, b: UploadFields, plan: UploadPlan = {}) {
+  const { limits } = await entitlementsFor(deps, me.userId, me.roles);
+  await checkUploadQuota(deps, me.userId, limits);
+  const videoId = newId();
+  const key = `originals/${me.userId}/${videoId}.${EXTENSIONS[b.contentType]}`;
+  const upload = await deps.storage.presignPut(key, b.contentType, b.sizeBytes);
+  await deps.db.transaction().execute(async (tx) => {
+    const region = await tx.selectFrom('profiles').select('region_id').where('user_id', '=', me.userId).executeTakeFirst();
+    await tx.insertInto('videos').values({
+      id: videoId,
+      owner_user_id: me.userId,
+      original_key: key,
+      declared_type: b.contentType,
+      size_bytes: b.sizeBytes,
+      title: b.title,
+      description: b.description ?? null,
+      skill_key: b.skillKey ?? null,
+      position: b.position ?? null,
+      foot: b.foot ?? null,
+      context: plan.context ?? b.context ?? null,
+      visibility: effectiveVisibility(me, b.visibility),
+      region_id: region?.region_id ?? null,
+      trim_start_ms: b.trimStartMs ?? null,
+      trim_end_ms: b.trimEndMs ?? null,
+      // The worker enforces the clip length the uploader's plan allowed when the upload started.
+      max_duration_ms: Math.min(limits.maxVideoSeconds * 1000, plan.maxDurationMs ?? Infinity),
+      rights_confirmed_at: deps.now(),
+    }).execute();
+    await replaceHashtags(tx, videoId, b.hashtags);
+    if (b.skillKey) await tx.insertInto('video_skills').values({ video_id: videoId, skill_key: b.skillKey, source: 'user' }).execute();
+    await plan.inTx?.(tx, videoId);
+  });
+  return { videoId, key, upload: { url: upload.url, method: 'PUT' as const, headers: upload.headers, expiresAt: upload.expiresAt.toISOString() } };
+}
+
 export const mediaRoutes = [
   route(
     { method: 'post', path: '/v1/uploads', summary: 'Start an upload; returns a signed URL for the original', tag: 'videos', auth: 'user', body: CreateUploadRequest, response: CreateUploadResponse, status: 201, rateLimit: { max: 20, timeWindow: '1 hour' } },
     async (ctx) => {
       ctx.authorize({ kind: 'video.upload' });
-      const me = ctx.me();
       const b = ctx.body;
       if (b.challengeId) {
-        const ch = await ctx.deps.db.selectFrom('challenges').select(['starts_at', 'ends_at']).where('id', '=', b.challengeId).executeTakeFirst();
-        const now = ctx.deps.now();
-        if (!ch || ch.starts_at > now || ch.ends_at < now) throw new ApiError(400, 'CHALLENGE_NOT_OPEN', 'this challenge is not open');
+        // An upload straight into a challenge is a challenge entry, with the same checks as POST /v1/challenges/:slug/submissions.
+        const { submitToChallenge } = await import('./challenge-entry.js');
+        const r = await submitToChallenge(ctx, b.challengeId, { ...b, othersInClip: false, consentOthers: false, safetyAck: false });
+        if (!r.upload) throw conflict('ALREADY_COMPLETED', 'upload already completed');
+        return { videoId: r.videoId, upload: r.upload };
       }
-      const { limits } = await entitlementsFor(ctx.deps, me.userId, me.roles);
-      await checkUploadQuota(ctx.deps, me.userId, limits);
-      const videoId = newId();
-      const key = `originals/${me.userId}/${videoId}.${EXTENSIONS[b.contentType]}`;
-      const upload = await ctx.deps.storage.presignPut(key, b.contentType, b.sizeBytes);
-      await ctx.deps.db.transaction().execute(async (tx) => {
-        const region = await tx.selectFrom('profiles').select('region_id').where('user_id', '=', me.userId).executeTakeFirst();
-        await tx.insertInto('videos').values({
-          id: videoId,
-          owner_user_id: me.userId,
-          original_key: key,
-          declared_type: b.contentType,
-          size_bytes: b.sizeBytes,
-          title: b.title,
-          description: b.description ?? null,
-          skill_key: b.skillKey ?? null,
-          position: b.position ?? null,
-          foot: b.foot ?? null,
-          context: b.challengeId ? 'challenge' : (b.context ?? null),
-          visibility: effectiveVisibility(me, b.visibility),
-          region_id: region?.region_id ?? null,
-          trim_start_ms: b.trimStartMs ?? null,
-          trim_end_ms: b.trimEndMs ?? null,
-          // The worker enforces the clip length the uploader's plan allowed when the upload started.
-          max_duration_ms: limits.maxVideoSeconds * 1000,
-          rights_confirmed_at: ctx.deps.now(),
-        }).execute();
-        await replaceHashtags(tx, videoId, b.hashtags);
-        if (b.skillKey) await tx.insertInto('video_skills').values({ video_id: videoId, skill_key: b.skillKey, source: 'user' }).execute();
-        if (b.challengeId) await tx.insertInto('challenge_entries').values({ challenge_id: b.challengeId, video_id: videoId }).execute();
-      });
-      await ctx.track('upload_started', { videoId, challenge: Boolean(b.challengeId) });
-      return { videoId, upload: { url: upload.url, method: 'PUT' as const, headers: upload.headers, expiresAt: upload.expiresAt.toISOString() } };
+      const { videoId, upload } = await beginUpload(ctx.deps, ctx.me(), b);
+      await ctx.track('upload_started', { videoId, challenge: false });
+      return { videoId, upload };
     },
   ),
 
