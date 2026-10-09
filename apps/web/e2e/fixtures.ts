@@ -16,7 +16,7 @@ const video = (n: number, o: ReturnType<typeof owner>, v: Partial<z.infer<typeof
   id: uuid(100 + n), owner: o, status: 'published', statusReason: null, moderation: 'safe', title: 'Clip', description: null,
   skill: null, position: null, foot: null, context: 'training', country: null, visibility: 'public', tags: [], hashtags: [],
   playbackUrl: `${MEDIA}/v${n}.mp4`, thumbnailUrl: `${MEDIA}/t${n}.svg`, durationMs: 9000, likes: 0, comments: 0, saves: 0,
-  likedByMe: false, savedByMe: false, createdAt: now, publishedAt: now, ...v,
+  likedByMe: false, savedByMe: false, createdAt: now, publishedAt: now, safetyStatus: null, canAppeal: false, privatePlaybackUrl: null, ...v,
 });
 
 const a = owner(1, 'demo_winger', 'Demo Winger', { verified: true });

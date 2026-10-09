@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useState } from 'react';
+import { useState, type FormEvent } from 'react';
 import { Avatar } from '@/components/player/PlayerCard';
 import { DemoBadge, VerifiedBadge } from '@/components/ui/Badge';
 import { Button, ButtonLink } from '@/components/ui/Button';
@@ -60,16 +60,18 @@ export function VideoDetail({ id }: { id: string }) {
     <div className="wrap page">
       <div className="split split--wide-side">
         <div className="upload-preview" style={{ maxInlineSize: '28rem', marginInline: 'auto', inlineSize: '100%' }}>
-          {video.playbackUrl ? (
-            <video src={video.playbackUrl} poster={video.thumbnailUrl ?? undefined} controls playsInline muted loop preload="metadata"
+          {video.playbackUrl ?? video.privatePlaybackUrl ? (
+            <video src={(video.playbackUrl ?? video.privatePlaybackUrl)!} poster={video.thumbnailUrl ?? undefined} controls playsInline muted loop preload="metadata"
               aria-label={fmt(t.feed.videoLabel, { handle: video.owner.handle, title: video.title })} />
           ) : <div className="feed-item__missing" style={{ blockSize: '100%' }}><p>{t.feed.noPlayback}</p></div>}
         </div>
         <div className="stack">
           {isOwner && video.status !== 'published' ? (
             <p className="notice notice--warn"><strong>{t.videoStatus[video.status]}</strong> {t.videoStatus[`${video.status}Text`]}
-              {video.statusReason ? ` ${fmt(t.videoStatus.reason, { reason: video.statusReason })}` : ''}</p>
+              {video.statusReason ? ` ${fmt(t.videoStatus.reason, { reason: video.statusReason })}` : ''}
+              {video.safetyStatus ? <><br /><span className="small">{fmt(t.guardianCheck.safetyStatus, { status: t.guardianCheck.status[video.safetyStatus] })}</span></> : null}</p>
           ) : null}
+          {isOwner && video.canAppeal ? <AppealForm videoId={video.id} onSent={() => v.setData((d) => ({ ...d, canAppeal: false }))} /> : null}
           <div className="row">
             <Link href={`/u/${video.owner.handle}`} className="player-card__main">
               <Avatar src={video.owner.avatarUrl} name={video.owner.displayName} size={44} />
@@ -100,5 +102,30 @@ export function VideoDetail({ id }: { id: string }) {
         </div>
       </div>
     </div>
+  );
+}
+
+/** Appeal a Guardian rejection or removal. A different moderator looks at it. */
+function AppealForm({ videoId, onSent }: { videoId: string; onSent: () => void }) {
+  const { t } = useI18n();
+  const toast = useToast();
+  const [text, setText] = useState('');
+  const [busy, setBusy] = useState(false);
+  const submit = async (e: FormEvent) => {
+    e.preventDefault();
+    setBusy(true);
+    try {
+      await api.appealVideo(videoId, { explanation: text.trim() });
+      toast.show(t.guardianCheck.appealSent, { tone: 'success' });
+      onSent();
+    } catch (err) { toast.show(errorMessage(err, t), { tone: 'error' }); } finally { setBusy(false); }
+  };
+  return (
+    <form className="card card--outline stack stack--tight" onSubmit={submit} data-testid="appeal-form">
+      <strong>{t.guardianCheck.appealTitle}</strong>
+      <label className="field"><span className="field__label muted small">{t.guardianCheck.appealHint}</span>
+        <textarea className="input" rows={3} required minLength={10} maxLength={2000} dir="auto" value={text} onChange={(e) => setText(e.target.value)} /></label>
+      <div><Button type="submit" variant="primary" size="sm" loading={busy}>{t.guardianCheck.appealSubmit}</Button></div>
+    </form>
   );
 }

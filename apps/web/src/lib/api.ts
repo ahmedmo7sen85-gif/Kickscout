@@ -230,6 +230,11 @@ export function createApiClient(opts: ApiClientOptions = {}) {
     auditLogs: (s?: AbortSignal) => get<T.AuditLogPage>('/v1/admin/audit-logs', undefined, s),
     createChallenge: (b: T.CreateChallengeRequest) => send<T.ChallengeView>('POST', '/v1/admin/challenges', b),
     adminMetrics: (q: { days?: number } = {}, s?: AbortSignal) => get<T.AdminMetrics>('/v1/admin/metrics', q, s),
+    // KICKSCOUT Guardian
+    casePreview: (id: string) => get<T.CasePreview>(`/v1/admin/moderation-cases/${e(id)}/preview`),
+    rescanVideo: (videoId: string) => send<T.RescanQueued>('POST', `/v1/admin/videos/${e(videoId)}/rescan`),
+    guardianMetrics: (q: { days?: number } = {}, s?: AbortSignal) => get<T.GuardianMetricsView>('/v1/admin/guardian/metrics', q, s),
+    appealVideo: (videoId: string, b: T.AppealRequest) => send<T.AppealView>('POST', `/v1/videos/${e(videoId)}/appeal`, b),
 
     // product analytics and feature flags
     trackEvents: (b: T.TrackEventsRequest) => send<T.TrackEventsResponse>('POST', '/v1/events', b),
