@@ -399,7 +399,7 @@ html[lang='ar'] .rcat h3 { text-transform: none; }
 }
 
 /* ---------- cards ---------- */
-.video-card { display: grid; gap: 0.4rem; min-inline-size: 0; }
+.video-card { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0.4rem; min-inline-size: 0; }
 .video-card__link { text-decoration: none; color: inherit; }
 .video-card__frame { position: relative; aspect-ratio: 9 / 16; border-radius: var(--radius); overflow: hidden; background: var(--surface); border: 1px solid var(--rule); }
 .video-card__frame img { position: absolute; inset: 0; inline-size: 100%; block-size: 100%; object-fit: cover; }
@@ -411,7 +411,7 @@ html[lang='ar'] .rcat h3 { text-transform: none; }
 .video-card__skill { font-size: 0.7rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-2); }
 .video-card__likes { font-size: 0.75rem; color: var(--text-2); display: inline-flex; align-items: center; gap: 0.25rem; }
 .video-card__owner { display: flex; align-items: center; gap: 0.35rem; font-size: 0.85rem; color: var(--muted); }
-.video-card__owner a { text-decoration: none; color: var(--text-2); }
+.video-card__owner a { text-decoration: none; color: var(--text-2); min-inline-size: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .video-card:hover .video-card__frame { border-color: var(--rule-strong); }
 
 .avatar { border-radius: 50%; object-fit: cover; background: var(--surface-2); flex: none; }

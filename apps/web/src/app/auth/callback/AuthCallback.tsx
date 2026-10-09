@@ -6,6 +6,7 @@ import { ButtonLink } from '@/components/ui/Button';
 import { EmptyState } from '@/components/ui/States';
 import { api, isApiError } from '@/lib/api';
 import { useI18n } from '@/lib/i18n/provider';
+import { readNext, withNext } from '@/lib/next-path';
 import { getSupabase } from '@/lib/supabase';
 
 /** OAuth / email-confirmation landing: exchange the code, then go to onboarding or home. */
@@ -17,6 +18,7 @@ export function AuthCallback() {
     const sb = getSupabase();
     if (!sb) { setFailed(true); return; }
     const code = new URL(window.location.href).searchParams.get('code');
+    const next = readNext();
     (async () => {
       if (code) {
         const { error } = await sb.auth.exchangeCodeForSession(code);
@@ -24,8 +26,8 @@ export function AuthCallback() {
       }
       const { data } = await sb.auth.getSession();
       if (!data.session) { setFailed(true); return; }
-      try { await api.me(); router.replace('/home'); } catch (e) {
-        router.replace(isApiError(e) && e.code === 'NOT_REGISTERED' ? '/onboarding' : '/home');
+      try { await api.me(); router.replace(next ?? '/home'); } catch (e) {
+        router.replace(isApiError(e) && e.code === 'NOT_REGISTERED' ? withNext('/onboarding', next) : next ?? '/home');
       }
     })();
   }, [router]);

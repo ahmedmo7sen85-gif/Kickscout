@@ -1,7 +1,7 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { AuthGate } from '@/components/AuthGate';
 import { PageHead } from '@/components/PageHead';
 import { Button, ButtonLink } from '@/components/ui/Button';
@@ -10,6 +10,7 @@ import { useAuth } from '@/lib/auth';
 import { HANDLE_RE } from '@/lib/constants';
 import { errorMessage } from '@/lib/errors';
 import { useI18n } from '@/lib/i18n/provider';
+import { readNext } from '@/lib/next-path';
 import type { RegisterResponse } from '@/lib/types';
 
 /** Whole years between a YYYY-MM-DD date and today, or null. Only a hint: the API applies the age rules. */
@@ -49,9 +50,12 @@ function Form() {
   const [result, setResult] = useState<RegisterResponse | null>(null);
   const [guardianEmail, setGuardianEmail] = useState('');
   const [invited, setInvited] = useState<string | null>(null);
+  // Where they were going before onboarding (e.g. a guardian invitation), else home.
+  const [done, setDone] = useState('/home');
+  useEffect(() => { setDone(readNext() ?? '/home'); }, []);
 
   if (me && !result) {
-    return <div className="card"><p>{t.errors.ALREADY_REGISTERED}</p><div><ButtonLink href="/home" variant="primary">{t.onboarding.continue}</ButtonLink></div></div>;
+    return <div className="card"><p>{t.errors.ALREADY_REGISTERED}</p><div><ButtonLink href={done} variant="primary">{t.onboarding.continue}</ButtonLink></div></div>;
   }
 
   const age = ageFrom(dob);
@@ -74,10 +78,10 @@ function Form() {
       });
       setResult(res);
       await refreshMe();
-      if (!res.guardianRequired && res.status === 'active') router.push('/home');
+      if (!res.guardianRequired && res.status === 'active') router.push(done);
     } catch (err) {
       setError(errorMessage(err, t));
-      if (isApiError(err) && err.code === 'ALREADY_REGISTERED') router.push('/home');
+      if (isApiError(err) && err.code === 'ALREADY_REGISTERED') router.push(done);
     } finally { setBusy(false); }
   };
 
@@ -101,10 +105,10 @@ function Form() {
             {error ? <p className="field__error" role="alert">{error}</p> : null}
             <div className="row">
               <Button type="submit" variant="primary" loading={busy} disabled={!!invited}>{t.onboarding.inviteGuardian}</Button>
-              <ButtonLink href="/home">{t.onboarding.continue}</ButtonLink>
+              <ButtonLink href={done}>{t.onboarding.continue}</ButtonLink>
             </div>
           </form>
-        ) : <div><ButtonLink href="/home" variant="primary">{t.onboarding.continue}</ButtonLink></div>}
+        ) : <div><ButtonLink href={done} variant="primary">{t.onboarding.continue}</ButtonLink></div>}
       </div>
     );
   }
