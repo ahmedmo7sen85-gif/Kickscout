@@ -122,6 +122,8 @@ export const SkillList = z.object({ items: z.array(SkillView) });
 /** Declared by the client for the signed upload. The worker checks the real file and decides. */
 export const VideoContentType = z.enum(['video/mp4', 'video/quicktime', 'video/webm']);
 export const VideoStatus = z.enum(['uploading', 'processing', 'analyzing', 'review_required', 'published', 'rejected', 'failed', 'deleted']);
+/** KICKSCOUT Guardian: the safety check every upload passes before it can be public. */
+export const SafetyStatus = z.enum(['PENDING_SCAN', 'PROCESSING', 'APPROVED', 'REJECTED', 'HUMAN_REVIEW', 'SCAN_FAILED', 'REMOVED']);
 export const ModerationVerdict = z.enum(['safe', 'flagged', 'review_required', 'rejected']);
 /** What kind of clip it is. Sent and returned as `context` (the original field name); old values stay valid. */
 export const VideoCategory = z.enum(['skill', 'match', 'training', 'freestyle', 'challenge', 'goal', 'assist', 'save', 'one_v_one',
@@ -204,6 +206,12 @@ export const VideoView = z.object({
   savedByMe: z.boolean(),
   createdAt: z.iso.datetime(),
   publishedAt: z.iso.datetime().nullable(),
+  /** Owner and staff only: where the Guardian safety check stands. */
+  safetyStatus: SafetyStatus.nullable().default(null),
+  /** Owner and guardian only: the decision on this video can be appealed now. */
+  canAppeal: z.boolean().default(false),
+  /** Owner and guardian only: a short-lived signed link to the private copy while it is not public. */
+  privatePlaybackUrl: z.string().nullable().default(null),
 });
 export const VideoPage = z.object({ items: z.array(VideoView), nextCursor: z.string().nullable() });
 
@@ -523,6 +531,40 @@ export const AccountExport = z.object({
 });
 
 // ---------------------------------------------------------------- admin
+/** One Guardian scan, as reviewers see it. Probabilities describe the clip's content, never the player. */
+export const GuardianScanView = z.object({
+  id: Id,
+  scanKind: z.enum(['upload', 'rescan', 'report', 'policy_update']),
+  decision: z.enum(['APPROVED', 'REJECTED', 'HUMAN_REVIEW', 'SCAN_FAILED']),
+  reasonCodes: z.array(z.string()),
+  detectedCategories: z.array(z.string()),
+  categoryProbabilities: z.record(z.string(), z.number()),
+  footballRelevance: z.number().nullable(),
+  confidence: z.number().nullable(),
+  suspiciousTimestamps: z.array(z.object({ atMs: z.number().int(), categories: z.array(z.string()), probability: z.number() })),
+  framesAnalyzed: z.number().int(),
+  stages: z.array(z.string()),
+  explanation: z.string().nullable(),
+  modelVersion: z.string().nullable(),
+  policyVersion: z.string(),
+  latencyMs: z.number().int().nullable(),
+  createdAt: z.iso.datetime(),
+});
+export const GuardianCaseDetails = z.object({
+  safetyStatus: SafetyStatus,
+  legalHold: z.boolean(),
+  /** Newest first. */
+  scans: z.array(GuardianScanView),
+  owner: z.object({
+    userId: Id,
+    activeStrikes: z.array(z.object({ category: z.string(), severity: z.enum(['minor', 'moderate', 'serious', 'critical']), createdAt: z.iso.datetime(), expiresAt: z.iso.datetime() })),
+    uploadRestrictedUntil: z.iso.datetime().nullable(),
+    status: z.string(),
+  }),
+  reports: z.array(z.object({ reason: z.string(), details: z.string().nullable(), status: z.string(), createdAt: z.iso.datetime() })),
+  previousDecisions: z.array(z.object({ decision: z.string().nullable(), note: z.string().nullable(), decidedAt: z.iso.datetime().nullable() })),
+  appeal: z.object({ id: Id, explanation: z.string(), status: z.enum(['pending', 'upheld', 'overturned']), createdAt: z.iso.datetime() }).nullable(),
+});
 export const ModerationCaseView = z.object({
   id: Id,
   targetKind: z.enum(['video', 'comment', 'user', 'organization']),
@@ -546,13 +588,56 @@ export const ModerationCaseView = z.object({
   counterNotice: CounterNoticeView.nullable(),
   /** Upheld copyright claims against the owner of the target (distinct videos): the repeat-infringer count. */
   ownerCopyrightStrikes: z.number().int().nullable(),
+  /** Child-safety case: admins only, the media is under legal hold and never shown in the queue. */
+  restricted: z.boolean().default(false),
+  reason: z.string().nullable().default(null),
+  assignedReviewer: Id.nullable().default(null),
+  /** Guardian evidence for a video case. */
+  guardian: GuardianCaseDetails.nullable().default(null),
 });
 export const ModerationCaseList = z.object({ items: z.array(ModerationCaseView) });
 export const ModerationCaseQuery = z.object({ status: z.enum(['open', 'actioned', 'dismissed']).default('open'), limit: z.coerce.number().int().min(1).max(100).default(50) });
 export const ModerationDecisionRequest = z.object({
-  /** escalate keeps the case open at top priority; suspend also suspends the owner's account. */
-  decision: z.enum(['approve', 'reject', 'remove', 'restrict', 'escalate', 'suspend', 'dismiss']),
+  /**
+   * escalate keeps the case open at top priority; suspend also suspends the owner's account.
+   * Guardian actions that keep the case open: request_review (a fresh scan and a second reviewer),
+   * restrict_uploads (the owner cannot upload for `days`), escalate_safety (child-safety workflow:
+   * admins only, legal hold, out of public view), assign (to the acting reviewer).
+   */
+  decision: z.enum(['approve', 'reject', 'remove', 'restrict', 'escalate', 'suspend', 'dismiss', 'request_review', 'restrict_uploads', 'escalate_safety', 'assign']),
   note: z.string().trim().max(1000).optional(),
+  /** restrict_uploads: how long. */
+  days: z.number().int().min(1).max(365).optional(),
+});
+export const CasePreview = z.object({ playbackUrl: z.string().nullable(), thumbnailUrl: z.string().nullable(), expiresAt: z.iso.datetime() });
+export const AppealRequest = z.object({ explanation: z.string().trim().min(10).max(2000) }).strict();
+export const AppealView = z.object({ id: Id, videoId: Id, status: z.enum(['pending', 'upheld', 'overturned']), createdAt: z.iso.datetime() });
+export const PolicyRescanRequest = z.object({
+  /** Re-check published videos last scanned under another policy version (or never). */
+  policyVersion: z.string().trim().min(1).max(100),
+  limit: z.number().int().min(1).max(5000).default(500),
+}).strict();
+export const RescanQueued = z.object({ queued: z.number().int() });
+export const GuardianMetricsQuery = z.object({ days: z.coerce.number().int().min(1).max(365).default(30) });
+/** Operational quality of the Guardian over a window. Measured, never claimed: no model is 100% accurate. */
+export const GuardianMetricsView = z.object({
+  days: z.number().int(),
+  uploadsScanned: z.number().int(),
+  decisions: z.record(z.string(), z.number().int()),
+  humanReviewRate: z.number().nullable(),
+  scanFailureRate: z.number().nullable(),
+  averageLatencyMs: z.number().nullable(),
+  /** Estimated from recorded token usage. */
+  averageCostUsd: z.number().nullable(),
+  /** Reviewer outcomes on clips the Guardian sent to review. */
+  reviewed: z.object({ approved: z.number().int(), rejected: z.number().int() }),
+  /** Automatic decisions a reviewer reversed: approvals later removed, rejections overturned on appeal. */
+  automaticReversed: z.object({ approvalsRemoved: z.number().int(), rejectionsOverturned: z.number().int() }),
+  appealReversalRate: z.number().nullable(),
+  /** Measured on reviewer outcomes; null until there are enough. */
+  estimatedPrecision: z.number().nullable(),
+  topReasonCodes: z.array(z.object({ code: z.string(), count: z.number().int() })),
+  policyVersions: z.array(z.string()),
 });
 export const UserStatusRequest = z.object({ status: z.enum(['active', 'suspended']), reason: z.string().trim().min(3).max(500) });
 export const VerificationDecisionRequest = z.object({ approve: z.boolean() });

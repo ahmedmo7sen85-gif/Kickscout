@@ -61,7 +61,7 @@ async function clip(owner: User, opts: { skill?: string; position?: string; tags
   const id = created.body.videoId as string;
   const published = new Date(Date.now() - (opts.daysAgo ?? 0) * 86_400_000);
   await env.db.updateTable('videos').set({
-    status: 'published', moderation: 'safe', playback_key: `playback/${id}.mp4`, thumbnail_key: `thumbs/${id}.jpg`, duration_ms: 9000,
+    status: 'published', safety_status: 'APPROVED', moderation: 'safe', playback_key: `playback/${id}.mp4`, thumbnail_key: `thumbs/${id}.jpg`, duration_ms: 9000,
     published_at: published, ai_model: opts.model ?? 'claude-opus-5-5',
   }).where('id', '=', id).execute();
   for (const t of opts.tags ?? []) {

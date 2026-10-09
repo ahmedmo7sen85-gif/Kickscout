@@ -10,8 +10,10 @@ import {
 import { route } from '../platform/route.js';
 import { ApiError, conflict, notFound } from '../platform/errors.js';
 import { newId } from '../platform/ids.js';
-import { audit, emit, notify } from '../platform/events.js';
-import { toVideoViews, videoQuery } from './media.js';
+import { audit, emit, enqueue, notify } from '../platform/events.js';
+import { toVideoViews, videoQuery, wakeWorker } from './media.js';
+import { assertCaseAccess, guardianDetails, holdForReview, holdUploads, strikeCategories } from './guardian.js';
+import { applyStrike } from '@fp/worker/guardian';
 import { challengeViews } from './challenges.js';
 import { runSavedSearchAlerts } from '@fp/worker/alerts';
 
@@ -120,8 +122,10 @@ export const moderationRoutes = [
     async (ctx) => {
       ctx.authorize({ kind: 'moderation.act' });
       const me = ctx.me();
-      const cases = await ctx.deps.db.selectFrom('moderation_cases').selectAll().where('status', '=', ctx.query.status)
-        .orderBy('priority').orderBy('created_at').limit(ctx.query.limit).execute();
+      let q = ctx.deps.db.selectFrom('moderation_cases').selectAll().where('status', '=', ctx.query.status);
+      // Child-safety cases exist only for admins.
+      if (!me.roles.includes('admin')) q = q.where('restricted', '=', false);
+      const cases = await q.orderBy('priority').orderBy('created_at').limit(ctx.query.limit).execute();
       const videoIds = cases.filter((c) => c.target_kind === 'video').map((c) => c.target_id);
       const commentIds = cases.filter((c) => c.target_kind === 'comment').map((c) => c.target_id);
       const orgIds = cases.filter((c) => c.target_kind === 'organization').map((c) => c.target_id);
@@ -138,17 +142,21 @@ export const moderationRoutes = [
       const aiModels = new Map((videoIds.length ? await ctx.deps.db.selectFrom('videos').select(['id', 'ai_model']).where('id', 'in', videoIds).execute() : []).map((v) => [v.id, v.ai_model]));
       const commentMap = new Map(comments.map((c) => [c.id, c]));
       const copyright = await copyrightContext(ctx.deps.db, cases);
+      const guardian = await guardianDetails(ctx.deps.db, cases, ctx.deps.now());
       return {
         items: cases.map((c) => ({
           id: c.id, targetKind: c.target_kind as never, targetId: c.target_id, source: c.source as never, categories: c.categories,
           aiVerdict: c.ai_verdict ?? null, aiModel: aiModels.get(c.target_id) ?? null, reportCount: c.report_count, priority: c.priority, status: c.status as never,
           decision: c.decision, createdAt: c.created_at.toISOString(),
-          video: videos.get(c.target_id) ?? null,
+          // Restricted media is never put in front of a reviewer through the queue.
+          video: c.restricted && videos.has(c.target_id) ? { ...videos.get(c.target_id)!, playbackUrl: null, thumbnailUrl: null, privatePlaybackUrl: null } : (videos.get(c.target_id) ?? null),
           comment: commentMap.has(c.target_id) ? { id: c.target_id, body: commentMap.get(c.target_id)!.body, authorHandle: commentMap.get(c.target_id)!.handle } : null,
           organization: c.target_kind === 'organization' ? (orgMap.get(c.target_id) ?? null) : null,
           copyrightClaims: copyright.claims.get(c.target_id) ?? [],
           counterNotice: copyright.notices.get(c.target_id) ?? null,
           ownerCopyrightStrikes: copyright.strikesFor(c.target_kind, c.target_id),
+          restricted: c.restricted, reason: c.reason, assignedReviewer: c.assigned_reviewer,
+          guardian: guardian.get(c.target_id) ?? null,
         })),
       };
     },
@@ -162,41 +170,142 @@ export const moderationRoutes = [
       const { decision, note } = ctx.body;
       let published: string | null = null;
       let publishedOwner: string | null = null;
+      let wake = false;
       await ctx.deps.db.transaction().execute(async (tx) => {
         const c = await tx.selectFrom('moderation_cases').selectAll().where('id', '=', z.uuid().parse(ctx.params.caseId)).forUpdate().executeTakeFirst();
         if (!c) throw notFound('case');
+        assertCaseAccess(me, c);
         if (c.status !== 'open') throw conflict('CASE_CLOSED', 'this case is already decided');
         const now = ctx.deps.now();
+        const caseAudit = (action: string, metadata: Record<string, unknown> = {}) =>
+          audit(tx, { actorId: me.userId, action, targetKind: c.target_kind, targetId: c.target_id, caseId: c.id, metadata: { caseId: c.id, note: note ?? null, ...metadata } });
+        const ownerOfTarget = async () => c.target_kind === 'user' ? c.target_id
+          : c.target_kind === 'video' ? (await tx.selectFrom('videos').select('owner_user_id').where('id', '=', c.target_id).executeTakeFirst())?.owner_user_id
+          : c.target_kind === 'comment' ? (await tx.selectFrom('comments').select('author_id').where('id', '=', c.target_id).executeTakeFirst())?.author_id
+          : undefined;
 
+        // ---- actions that keep the case open
         if (decision === 'escalate') {
           await tx.updateTable('moderation_cases').set({ priority: 0 }).where('id', '=', c.id).execute();
-          await audit(tx, { actorId: me.userId, action: 'moderation.escalate', targetKind: c.target_kind, targetId: c.target_id, metadata: { caseId: c.id, note: note ?? null } });
+          await caseAudit('moderation.escalate');
           return;
         }
+        if (decision === 'assign') {
+          await tx.updateTable('moderation_cases').set({ assigned_reviewer: me.userId }).where('id', '=', c.id).execute();
+          await caseAudit('moderation.assign');
+          return;
+        }
+        if (decision === 'request_review') {
+          // A fresh Guardian scan and a different reviewer.
+          await tx.updateTable('moderation_cases').set({ assigned_reviewer: null }).where('id', '=', c.id).execute();
+          if (c.target_kind === 'video') {
+            const v = await tx.selectFrom('videos').select(['legal_hold']).where('id', '=', c.target_id).executeTakeFirst();
+            if (v && !v.legal_hold) {
+              await enqueue(tx, 'video.rescan', { videoId: c.target_id, kind: 'rescan' });
+              wake = true;
+            }
+          }
+          await caseAudit('moderation.request_review');
+          return;
+        }
+        if (decision === 'restrict_uploads') {
+          const ownerId = await ownerOfTarget();
+          if (!ownerId) throw new ApiError(400, 'NO_OWNER', 'this case has no account to restrict');
+          const days = ctx.body.days ?? 7;
+          await holdUploads(tx, ownerId, now, days, 'Restricted by a moderator');
+          await notify(tx, ownerId, 'account.uploads_restricted', { until: new Date(now.getTime() + days * 86_400_000).toISOString() });
+          await caseAudit('moderation.restrict_uploads', { userId: ownerId, days });
+          return;
+        }
+        if (decision === 'escalate_safety') {
+          // Child-safety workflow: admins only from here, top priority, media kept as evidence and out of public view.
+          await tx.updateTable('moderation_cases').set({ restricted: true, priority: 0 }).where('id', '=', c.id).execute();
+          const ownerId = await ownerOfTarget();
+          if (c.target_kind === 'video') {
+            await tx.updateTable('videos').set({ legal_hold: true }).where('id', '=', c.target_id).execute();
+            await holdForReview(tx, c.target_id);
+          }
+          if (ownerId) await holdUploads(tx, ownerId, now);
+          await caseAudit('moderation.escalate_safety');
+          return;
+        }
+
+        // ---- decisions that close the case
         if (decision === 'suspend' && c.target_kind !== 'organization') {
-          const ownerId = c.target_kind === 'user' ? c.target_id
-            : c.target_kind === 'video' ? (await tx.selectFrom('videos').select('owner_user_id').where('id', '=', c.target_id).executeTakeFirst())?.owner_user_id
-            : (await tx.selectFrom('comments').select('author_id').where('id', '=', c.target_id).executeTakeFirst())?.author_id;
+          const ownerId = await ownerOfTarget();
           if (ownerId) await tx.updateTable('users').set({ status: 'suspended' }).where('id', '=', ownerId).where('status', '=', 'active').execute();
-          if (c.target_kind === 'video') await tx.updateTable('videos').set({ status: 'rejected', moderation: 'rejected', status_reason: StatusReason.remove }).where('id', '=', c.target_id).where('status', '!=', 'deleted').execute();
+          if (c.target_kind === 'video') {
+            const v = await tx.updateTable('videos').set({
+              status: 'rejected', moderation: 'rejected', status_reason: StatusReason.remove, safety_checked_at: now,
+              safety_status: sql<string>`CASE WHEN status = 'published' THEN 'REMOVED' ELSE 'REJECTED' END`,
+            }).where('id', '=', c.target_id).where('status', '!=', 'deleted').returning('id').executeTakeFirst();
+            if (v) {
+              await enqueue(tx, 'video.unpublish', { videoId: c.target_id });
+              wake = true;
+            }
+          }
           if (c.target_kind === 'comment') await tx.updateTable('comments').set({ moderation: 'removed' }).where('id', '=', c.target_id).execute();
         }
-        if (c.target_kind === 'video' && decision !== 'dismiss' && decision !== 'suspend') {
-          const v = await tx.selectFrom('videos').select(['id', 'owner_user_id', 'status', 'playback_key']).where('id', '=', c.target_id).executeTakeFirst();
+        let appealOutcome: 'overturned' | 'upheld' | null = null;
+        if (c.target_kind === 'video' && decision !== 'suspend') {
+          const v = await tx.selectFrom('videos').selectAll().where('id', '=', c.target_id).executeTakeFirst();
           if (v && v.status !== 'deleted') {
+            const appeal = await tx.selectFrom('moderation_appeals').select(['id', 'user_id']).where('video_id', '=', v.id).where('status', '=', 'pending').executeTakeFirst();
+            if (decision === 'dismiss' && v.safety_status !== 'APPROVED' && v.status !== 'rejected') {
+              // A held upload needs a real decision; dismissing would leave it in limbo.
+              throw new ApiError(409, 'DECISION_REQUIRED', 'approve or reject this video');
+            }
             if (decision === 'approve') {
-              // Only a fully processed video can be published.
-              if (!v.playback_key) throw new ApiError(409, 'NOT_PROCESSED', 'this video has not finished processing');
-              await tx.updateTable('videos').set({ status: 'published', moderation: 'safe', status_reason: null, published_at: now }).where('id', '=', v.id).execute();
-              await notify(tx, v.owner_user_id, 'video.published', { videoId: v.id });
-              published = v.id;
-              publishedOwner = v.owner_user_id;
+              const hasPrivateCopy = Boolean(v.quarantine_playback_key);
+              if (!hasPrivateCopy && !v.playback_key) throw new ApiError(409, 'NOT_PROCESSED', 'there is no processed copy of this video; the player has to upload it again');
+              const publishNow = v.status === 'published' || !hasPrivateCopy;
+              await tx.updateTable('videos').set({
+                safety_status: 'APPROVED', moderation: 'safe', status_reason: null, legal_hold: false, safety_checked_at: now,
+                ...(publishNow ? { status: 'published', published_at: sql<Date>`coalesce(published_at, ${now})` } : {}),
+              }).where('id', '=', v.id).execute();
+              // The Guardian was wrong about this one: its strikes no longer count, and an investigation hold is lifted.
+              await tx.updateTable('account_strikes').set({ voided_at: now }).where('video_id', '=', v.id).where('voided_at', 'is', null).execute();
+              if (v.legal_hold) {
+                await tx.updateTable('users').set({ upload_restricted_until: null, upload_restriction_reason: null })
+                  .where('id', '=', v.owner_user_id).where('upload_restriction_reason', '=', 'Safety investigation').execute();
+              }
+              if (publishNow) {
+                if (v.status !== 'published') {
+                  await notify(tx, v.owner_user_id, 'video.published', { videoId: v.id });
+                  published = v.id;
+                  publishedOwner = v.owner_user_id;
+                }
+              } else {
+                // The worker copies the private files to public delivery, then marks it published.
+                await enqueue(tx, 'video.publish', { videoId: v.id });
+                wake = true;
+              }
+              if (appeal) appealOutcome = 'overturned';
             } else if (decision === 'restrict') {
               await tx.updateTable('videos').set({ visibility: 'private' }).where('id', '=', v.id).execute();
               await notify(tx, v.owner_user_id, 'video.restricted', { videoId: v.id });
-            } else {
-              await tx.updateTable('videos').set({ status: 'rejected', moderation: 'rejected', status_reason: StatusReason[decision] }).where('id', '=', v.id).execute();
-              await notify(tx, v.owner_user_id, 'video.rejected', { videoId: v.id });
+            } else if (decision === 'reject' || decision === 'remove') {
+              const wasPublic = v.status === 'published';
+              await tx.updateTable('videos').set({
+                status: 'rejected', moderation: 'rejected', status_reason: StatusReason[decision], safety_checked_at: now,
+                safety_status: wasPublic || decision === 'remove' ? 'REMOVED' : 'REJECTED',
+              }).where('id', '=', v.id).execute();
+              if (wasPublic || v.playback_key) {
+                await enqueue(tx, 'video.unpublish', { videoId: v.id });
+                wake = true;
+              }
+              const strike = await applyStrike(tx, {
+                userId: v.owner_user_id, videoId: v.id, caseId: c.id, categories: strikeCategories(c.categories), source: 'reviewer', now, actorId: me.userId,
+              });
+              if (appeal) appealOutcome = 'upheld';
+              else await notify(tx, v.owner_user_id, wasPublic ? 'video.removed' : 'video.rejected', { videoId: v.id, ...(strike ? { strike: strike.severity } : {}) });
+            } else if (decision === 'dismiss' && appeal) {
+              appealOutcome = 'upheld';
+            }
+            if (appeal && appealOutcome) {
+              await tx.updateTable('moderation_appeals').set({ status: appealOutcome, decided_by: me.userId, decided_at: now }).where('id', '=', appeal.id).execute();
+              await tx.updateTable('moderation_cases').set({ appeal_status: appealOutcome }).where('id', '=', c.id).execute();
+              await notify(tx, v.owner_user_id, 'video.appeal_decided', { videoId: v.id, outcome: appealOutcome });
             }
           }
         }
@@ -220,7 +329,7 @@ export const moderationRoutes = [
         }).where('id', '=', c.id).execute();
         await tx.updateTable('reports').set({ status: decision === 'dismiss' ? 'dismissed' : 'actioned' })
           .where('target_kind', '=', c.target_kind).where('target_id', '=', c.target_id).where('status', '=', 'open').execute();
-        await audit(tx, { actorId: me.userId, action: `moderation.${decision}`, targetKind: c.target_kind, targetId: c.target_id, metadata: { caseId: c.id, note: note ?? null } });
+        await caseAudit(`moderation.${decision}`, appealOutcome ? { appeal: appealOutcome } : {});
       });
       // Saved-search alerts for the newly published clip, once it is committed. Best effort: the
       // worker's maintenance run catches up if this fails.
@@ -228,6 +337,7 @@ export const moderationRoutes = [
         await runSavedSearchAlerts(ctx.deps.db, { videoIds: [published] }).catch((err: Error) => ctx.req.log.warn({ err }, 'saved-search alerts failed'));
         if (publishedOwner) await ctx.track('upload_published', { videoId: published }, { userId: publishedOwner });
       }
+      if (wake) await wakeWorker(ctx.deps, ctx.req.log);
     },
   ),
 

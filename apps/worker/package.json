@@ -21,6 +21,10 @@
     "./analytics": {
       "types": "./dist/analytics.d.ts",
       "default": "./dist/analytics.js"
+    },
+    "./guardian": {
+      "types": "./dist/guardian/records.d.ts",
+      "default": "./dist/guardian/records.js"
     }
   },
   "scripts": {

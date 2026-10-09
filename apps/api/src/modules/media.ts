@@ -34,6 +34,7 @@ export function videoQuery(db: Database) {
       'profiles.handle', 'profiles.display_name', 'profiles.avatar_key', 'profiles.verified_at', 'users.is_demo',
       'regions.country_code', 'privacy_settings.region_precision', 'privacy_settings.profile_visibility',
       'privacy_settings.comments as comments_setting', 'privacy_settings.show_country', 'users.status as owner_status',
+      'videos.safety_status', 'videos.legal_hold', 'videos.quarantine_playback_key', 'videos.quarantine_thumbnail_key',
     ]);
 }
 type VideoQuery = ReturnType<typeof videoQuery>;
@@ -47,6 +48,8 @@ export type VideoRow = Awaited<ReturnType<VideoQuery['executeTakeFirstOrThrow']>
 export function discoverable(q: VideoQuery, viewer: Actor | null, opts: { includeUnlisted?: boolean } = {}): VideoQuery {
   let out = q
     .where('videos.status', '=', 'published')
+    // Guardian: only approved content is ever listed (the database enforces this for 'published' too).
+    .where('videos.safety_status', '=', 'APPROVED')
     .where('videos.visibility', '=', 'public')
     .where('privacy_settings.profile_visibility', 'in', opts.includeUnlisted ? ['public', 'unlisted'] : ['public'])
     .where('users.status', '=', 'active');
@@ -86,6 +89,15 @@ export async function toVideoViews(deps: Deps, viewer: Actor | null, rows: Video
   const db = deps.db;
   const count = (table: 'likes' | 'saves') =>
     db.selectFrom(table).select(['video_id', db.fn.countAll<string>().as('n')]).where('video_id', 'in', ids).groupBy('video_id').execute();
+  // Owner and guardian: the private copy of a clip that is not public yet, through a short-lived signed link.
+  const ownerSide = (r: VideoRow) => !!viewer && (viewer.userId === r.owner_user_id || viewer.guardianOf.includes(r.owner_user_id));
+  const privateLinks = new Map(await Promise.all(rows
+    .filter((r) => ownerSide(r) && r.status !== 'published' && !r.legal_hold && r.quarantine_playback_key)
+    .map(async (r) => [r.id, (await deps.storage.presignGet(r.quarantine_playback_key!)).url] as const)));
+  const appealable = rows.filter((r) => ownerSide(r) && canBeAppealed(r)).map((r) => r.id);
+  const pendingAppeals = new Set(appealable.length
+    ? (await db.selectFrom('moderation_appeals').select('video_id').where('video_id', 'in', appealable).where('status', '=', 'pending').execute()).map((a) => a.video_id)
+    : []);
   const [likeCounts, saveCounts, commentCounts, myLikes, mySaves, tags, hashtags] = await Promise.all([
     count('likes'),
     count('saves'),
@@ -147,8 +159,19 @@ export async function toVideoViews(deps: Deps, viewer: Actor | null, rows: Video
       savedByMe: saved.has(r.id),
       createdAt: r.created_at.toISOString(),
       publishedAt: r.published_at?.toISOString() ?? null,
+      safetyStatus: internals ? (r.safety_status as never) : null,
+      canAppeal: appealable.includes(r.id) && !pendingAppeals.has(r.id),
+      privatePlaybackUrl: privateLinks.get(r.id) ?? null,
     };
   });
+}
+
+/**
+ * A Guardian rejection or removal can be appealed while the private copy is kept (the appeal window).
+ * Child-safety holds are not appealed this way; they are handled by the safety team.
+ */
+export function canBeAppealed(r: { status: string; safety_status: string; legal_hold: boolean; quarantine_playback_key: string | null }) {
+  return r.status === 'rejected' && (r.safety_status === 'REJECTED' || r.safety_status === 'REMOVED') && !r.legal_hold && !!r.quarantine_playback_key;
 }
 
 /** Loads a video the viewer may see, or throws 404 (hidden and missing look the same). */
@@ -161,7 +184,7 @@ export async function visibleVideo(deps: Deps, viewer: Actor | null, videoId: st
   const privileged = relation === 'self' || relation === 'guardian' || relation === 'admin' || relation === 'moderator';
   if (!privileged) {
     // Suspended and deleted accounts take their videos with them.
-    if (row.status !== 'published' || row.owner_status !== 'active') throw notFound('video');
+    if (row.status !== 'published' || row.safety_status !== 'APPROVED' || row.owner_status !== 'active') throw notFound('video');
     if (row.visibility === 'private' || row.profile_visibility === 'private') throw notFound('video');
     if ((row.visibility === 'followers' || row.profile_visibility === 'followers') && relation !== 'follower') throw notFound('video');
     if (viewer && (await blockedEitherWay(deps.db, viewer.userId, row.owner_user_id))) throw notFound('video');
@@ -245,6 +268,11 @@ export const mediaRoutes = [
         const ch = await ctx.deps.db.selectFrom('challenges').select(['starts_at', 'ends_at']).where('id', '=', b.challengeId).executeTakeFirst();
         const now = ctx.deps.now();
         if (!ch || ch.starts_at > now || ch.ends_at < now) throw new ApiError(400, 'CHALLENGE_NOT_OPEN', 'this challenge is not open');
+      }
+      // Guardian enforcement applies whatever the plan: a paid subscription does not lift it.
+      const restriction = await ctx.deps.db.selectFrom('users').select(['upload_restricted_until']).where('id', '=', me.userId).executeTakeFirst();
+      if (restriction?.upload_restricted_until && restriction.upload_restricted_until > ctx.deps.now()) {
+        throw new ApiError(403, 'UPLOADS_RESTRICTED', `uploading is paused on this account until ${restriction.upload_restricted_until.toISOString()}`);
       }
       const { limits } = await entitlementsFor(ctx.deps, me.userId, me.roles);
       await checkUploadQuota(ctx.deps, me.userId, limits);
@@ -332,6 +360,10 @@ export const mediaRoutes = [
             .onConflict((oc) => oc.columns(['video_id', 'skill_key', 'source']).doUpdateSet({ status: 'active' })).execute();
         }
         if (b.hashtags) await replaceHashtags(tx, video.id, b.hashtags);
+        // New words on a public clip are checked again: the Guardian also reads titles, descriptions and hashtags.
+        if (video.status === 'published' && (b.title !== undefined || b.description !== undefined || b.hashtags)) {
+          await enqueue(tx, 'video.rescan', { videoId: video.id, kind: 'rescan' });
+        }
       });
       return viewOf(ctx.deps, me, video.id);
     },
