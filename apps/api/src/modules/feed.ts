@@ -45,8 +45,7 @@ export const feedRoutes = [
           .where('users.created_at', '>', sql<Date>`now() - make_interval(days => ${NEW_TALENT_MAX_ACCOUNT_DAYS})`)
           .where((eb) => eb(eb.selectFrom('follows').select(eb.fn.countAll().as('n')).whereRef('followee_id', '=', 'videos.owner_user_id'), '<', NEW_TALENT_MAX_FOLLOWERS));
       }
-      if (tab === 'for_you' && viewer && personalizationAvailable(ctx.deps) && (await recommendationPrefs(ctx.deps, viewer.userId)).personalize) {
-        // TODO(phase E1): also gate on the `for_you_personalization` feature flag once it exists.
+      if (tab === 'for_you' && viewer && (await personalizationAvailable(ctx.deps, viewer)) && (await recommendationPrefs(ctx.deps, viewer.userId)).personalize) {
         return { tab, capability: cap, personalized: true, ...(await personalizedForYou(ctx.deps, viewer, { limit, cursor }, decodeOffset)) };
       }
       if (tab === 'trending') {

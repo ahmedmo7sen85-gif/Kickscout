@@ -4,6 +4,7 @@ import type { Logger } from './pipeline.js';
 import type { VideoStorage } from './storage/storage.js';
 import { playbackKey, thumbnailKey } from './storage/storage.js';
 import { runSavedSearchAlerts } from './alerts.js';
+import { rollupAnalytics } from './analytics.js';
 
 export interface MaintenanceOptions {
   /** Days a published video's original is kept after publishing (for re-processing), before it is removed. */
@@ -23,6 +24,10 @@ export interface MaintenanceReport {
   rateLimitRowsPruned: number;
   /** Saved-search alert notifications sent by this run (catch-up for anything the publish-time call missed). */
   alertNotifications: number;
+  /** Days rolled up into analytics_daily (with the North Star) by this run; 0 once today's rollup is done. */
+  analyticsDaysRolled: number;
+  /** Raw analytics events deleted after their 180-day retention (their days are rolled up first). */
+  analyticsEventsDeleted: number;
   errors: number;
 }
 
@@ -38,7 +43,9 @@ export async function runMaintenance(
   now: Date = new Date(),
   opts: MaintenanceOptions = DEFAULT_MAINTENANCE,
 ): Promise<MaintenanceReport> {
-  const report: MaintenanceReport = { abandonedUploads: 0, originalsPurged: 0, deliveryPurged: 0, rateLimitRowsPruned: 0, alertNotifications: 0, errors: 0 };
+  const report: MaintenanceReport = {
+    abandonedUploads: 0, originalsPurged: 0, deliveryPurged: 0, rateLimitRowsPruned: 0, alertNotifications: 0, analyticsDaysRolled: 0, analyticsEventsDeleted: 0, errors: 0,
+  };
   const hoursAgo = (h: number) => new Date(now.getTime() - h * 3_600_000);
 
   const abandoned = await db
@@ -103,6 +110,15 @@ export async function runMaintenance(
   } catch (err) {
     report.errors++;
     log.warn('saved-search alerts failed', { error: (err as Error).message });
+  }
+
+  try {
+    const rollup = await rollupAnalytics(db, now);
+    report.analyticsDaysRolled = rollup.daysRolled;
+    report.analyticsEventsDeleted = rollup.eventsDeleted;
+  } catch (err) {
+    report.errors++;
+    log.warn('analytics rollup failed', { error: (err as Error).message });
   }
 
   log.info('maintenance finished', { ...report });

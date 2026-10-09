@@ -1,11 +1,18 @@
+import type { Metadata } from 'next';
 import Link from 'next/link';
 import { ButtonLink } from '@/components/ui/Button';
 import { HeroMedia } from '@/components/landing/HeroMedia';
 import { PromoClip } from '@/components/landing/PromoClip';
 import { FEET, POSITIONS, SKILL_KEYS } from '@/lib/constants';
-import { pick } from '@/lib/i18n';
+import { LOCALE_NAMES, LOCALES, pick } from '@/lib/i18n';
 import { getServerDict } from '@/lib/i18n/server';
+import { pageMetadata } from '@/lib/seo';
 import { CHALLENGE_EXAMPLES, REEL_CLIPS, SHOWCASE_STEMS } from '@/lib/promo';
+
+export async function generateMetadata(): Promise<Metadata> {
+  const { t } = await getServerDict();
+  return pageMetadata({ t, path: '/' });
+}
 
 /** Landing: eleven sections in the owner's order. All media here is AI-generated and labelled. */
 export default async function LandingPage() {
@@ -185,7 +192,7 @@ export default async function LandingPage() {
             <p className="lede">{L.communityLede}</p>
           </div>
           <p className="ar-line" dir="rtl" lang="ar">{L.communityArLine}</p>
-          <div className="langs"><span lang="en">English</span><span lang="ar">العربية</span></div>
+          <ul className="langs">{LOCALES.map((l) => <li key={l} lang={l}>{LOCALE_NAMES[l]}</li>)}</ul>
         </div>
       </section>
 

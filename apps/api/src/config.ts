@@ -57,8 +57,8 @@ const Env = z
      */
     ANTHROPIC_API_KEY: unsetIfEmpty(z.string().min(1).optional()),
     /**
-     * Feature switches. TODO(phase E1): read these from the feature-flag system (flags
-     * `nl_scout_search` and `for_you_personalization`) once it lands; the env value stays the default.
+     * Feature switches. 'on' turns the feature on for everyone; 'off' leaves it to the feature
+     * flags `nl_scout_search` and `for_you_personalization` (admin flags page, gradual rollout).
      */
     NL_SCOUT_SEARCH: z.enum(['on', 'off']).default('off'),
     FOR_YOU_PERSONALIZATION: z.enum(['on', 'off']).default('off'),

@@ -7,6 +7,7 @@ import { api } from '@/lib/api';
 import { useAuthedAction } from '@/lib/hooks';
 import { useI18n } from '@/lib/i18n/provider';
 import { absoluteUrl, shareLink } from '@/lib/share';
+import { trackClient } from '@/components/Analytics';
 import type { VideoView } from '@/lib/types';
 import { CommentSheet } from './CommentSheet';
 import { ReportSheet } from './ReportSheet';
@@ -35,6 +36,7 @@ export function VideoActions({ video, layout = 'rail' }: { video: VideoView; lay
   };
   const share = async () => {
     const r = await shareLink(absoluteUrl(`/v/${video.id}`), video.title, fmt(t.feed.shareText, { handle: video.owner.handle }));
+    if (r === 'shared' || r === 'copied') trackClient('share_clicked', { videoId: video.id });
     if (r === 'copied') toast.show(t.common.linkCopied, { tone: 'success' });
     if (r === 'failed') toast.show(t.common.copyFailed, { tone: 'error' });
   };

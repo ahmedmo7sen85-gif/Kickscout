@@ -13,7 +13,7 @@ export function SiteFooter() {
     <footer className="site-footer">
       <div className="wrap">
         <span>{t.landing.footerTagline}</span>
-        <nav aria-label="Footer">
+        <nav aria-label={t.nav.footerLabel}>
           <ul>
             <li><Link href="/for-players">{t.nav.forPlayers}</Link></li>
             <li><Link href="/for-scouts">{t.nav.forScouts}</Link></li>

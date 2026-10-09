@@ -1,5 +1,9 @@
 import type { FastifyError, FastifyReply, FastifyRequest } from 'fastify';
 import { ZodError } from 'zod';
+import type { ErrorReporter } from './error-reporter.js';
+import { LogErrorReporter } from './error-reporter.js';
+
+const defaultReporter = new LogErrorReporter();
 
 export class ApiError extends Error {
   constructor(
@@ -20,7 +24,10 @@ const TITLES: Record<number, string> = {
   413: 'Payload Too Large', 422: 'Unprocessable Content', 429: 'Too Many Requests', 500: 'Internal Server Error', 503: 'Service Unavailable',
 };
 
-export function problemHandler(err: FastifyError | Error, req: FastifyRequest, reply: FastifyReply) {
+/** Hashes the caller id for error reports; set by the app (it holds the hashing secret). */
+export type UserHasher = (userId: string) => string;
+
+export function problemHandler(err: FastifyError | Error, req: FastifyRequest, reply: FastifyReply, reporter: ErrorReporter = defaultReporter, hashUser?: UserHasher) {
   let status = 500;
   let code = 'INTERNAL';
   let detail: string | undefined = 'unexpected error';
@@ -40,7 +47,10 @@ export function problemHandler(err: FastifyError | Error, req: FastifyRequest, r
     code = (err as FastifyError).code ?? 'BAD_REQUEST';
     detail = err.message;
   } else {
-    req.log.error({ err }, 'unhandled error');
+    reporter.capture(err, {
+      requestId: req.id, method: req.method, route: req.routeOptions?.url ?? 'unmatched',
+      userHash: req.actorId && hashUser ? hashUser(req.actorId) : null,
+    }, req.log);
   }
 
   return reply

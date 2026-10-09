@@ -13,3 +13,4 @@ export * from './storage/local.js';
 export * from './worker.js';
 export * from './maintenance.js';
 export * from './alerts.js';
+export * from './analytics.js';

@@ -1,11 +1,12 @@
 import type { Metadata } from 'next';
+import { pageMetadata } from '@/lib/seo';
 import Link from 'next/link';
 import { LEGAL_DOCS } from '@/lib/legal';
 import { getServerDict } from '@/lib/i18n/server';
 
 export async function generateMetadata(): Promise<Metadata> {
   const { t } = await getServerDict();
-  return { title: t.legal.hubTitle, description: t.legal.hubIntro };
+  return pageMetadata({ t, title: t.legal.hubTitle, description: t.legal.hubIntro, path: '/legal' });
 }
 
 export default async function LegalHub() {

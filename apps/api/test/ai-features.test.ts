@@ -5,6 +5,7 @@ import { RADAR_CATEGORIES, monthPeriod } from '@fp/domain';
 import { RadarCategory } from '@fp/contracts';
 import { createTestEnv } from './helpers.js';
 import type { TestEnv } from './helpers.js';
+import { invalidateFlags } from '../src/platform/flags.js';
 
 let env: TestEnv;
 beforeAll(async () => {
@@ -78,6 +79,12 @@ const useAi = (provider: AiProvider | null) => {
 const handles = (r: { body: Json }) => (r.body.results?.items ?? r.body.items).map((p: Json) => p.handle);
 
 // ------------------------------------------------------------------------------------------------
+/** Sets a seeded feature flag and drops this instance's flag cache so the change applies at once. */
+async function setFlag(key: string, enabled: boolean, rollout: number) {
+  await env.db.updateTable('feature_flags').set({ enabled, rollout_percentage: rollout }).where('key', '=', key).execute();
+  invalidateFlags(env.db);
+}
+
 describe('natural-language scout search', () => {
   let scout: User;
   let leftWinger: User;
@@ -109,6 +116,19 @@ describe('natural-language scout search', () => {
       expect(r.body.code).toBe('FEATURE_DISABLED');
       expect(await searchesUsed(scout.userId)).toBe(before);
     } finally {
+      env.deps.config.NL_SCOUT_SEARCH = 'on';
+    }
+  });
+
+  it('with NL_SCOUT_SEARCH off, the nl_scout_search flag switches it on for the callers it includes', async () => {
+    env.deps.config.NL_SCOUT_SEARCH = 'off';
+    try {
+      await setFlag('nl_scout_search', true, 100);
+      expect((await nl(scout.token, 'left wingers')).status).toBe(200);
+      await setFlag('nl_scout_search', true, 0);
+      expect((await nl(scout.token, 'left wingers')).body.code).toBe('FEATURE_DISABLED');
+    } finally {
+      await setFlag('nl_scout_search', false, 0);
       env.deps.config.NL_SCOUT_SEARCH = 'on';
     }
   });
@@ -326,6 +346,18 @@ describe('For You personalisation with user controls', () => {
       expect(mine(b)[0]).toBe(ids.strangerClip);
       expect((await call('GET', '/v1/me/recommendations', { token: viewer.token })).body.available).toBe(false);
     } finally {
+      env.deps.config.FOR_YOU_PERSONALIZATION = 'on';
+    }
+  });
+
+  it('with FOR_YOU_PERSONALIZATION off, the for_you_personalization flag personalises For You for the people it includes', async () => {
+    env.deps.config.FOR_YOU_PERSONALIZATION = 'off';
+    try {
+      await setFlag('for_you_personalization', true, 100);
+      expect((await forYou(viewer.token)).personalized).toBe(true);
+      expect((await call('GET', '/v1/me/recommendations', { token: viewer.token })).body.available).toBe(true);
+    } finally {
+      await setFlag('for_you_personalization', false, 0);
       env.deps.config.FOR_YOU_PERSONALIZATION = 'on';
     }
   });

@@ -7,6 +7,7 @@ import type { Actor, ForYouCandidate, ForYouSignals } from '@fp/domain';
 import type { DB } from '@fp/db';
 import type { Deps } from '../deps.js';
 import { route } from '../platform/route.js';
+import { isEnabled } from '../platform/flags.js';
 import { notFound } from '../platform/errors.js';
 import { discoverable, toVideoViews, videoQuery } from './media.js';
 import type { VideoRow } from './media.js';
@@ -20,7 +21,13 @@ const CANDIDATE_LIMIT = 500;
 const SIGNAL_DAYS = 180;
 const MAX_OFFSET = 1000;
 
-export const personalizationAvailable = (deps: Deps) => deps.config.FOR_YOU_PERSONALIZATION === 'on';
+/**
+ * Personalisation is on for this viewer when FOR_YOU_PERSONALIZATION=on (everyone) or the
+ * `for_you_personalization` flag includes them (gradual rollout from the admin flags page).
+ */
+export async function personalizationAvailable(deps: Deps, viewer: Actor | null): Promise<boolean> {
+  return deps.config.FOR_YOU_PERSONALIZATION === 'on' || (await isEnabled(deps, 'for_you_personalization', viewer));
+}
 
 export async function recommendationPrefs(deps: Deps, userId: string) {
   const row = await deps.db.selectFrom('recommendation_preferences').selectAll().where('user_id', '=', userId).executeTakeFirst();
@@ -109,11 +116,11 @@ export async function personalizedForYou(deps: Deps, viewer: Actor, page: { limi
   };
 }
 
-async function settingsView(deps: Deps, userId: string): Promise<z.input<typeof RecommendationSettingsView>> {
-  const [prefs, hidden] = await Promise.all([recommendationPrefs(deps, userId), notInterested(deps, userId)]);
+async function settingsView(deps: Deps, viewer: Actor): Promise<z.input<typeof RecommendationSettingsView>> {
+  const [prefs, hidden] = await Promise.all([recommendationPrefs(deps, viewer.userId), notInterested(deps, viewer.userId)]);
   return {
     personalize: prefs.personalize,
-    available: personalizationAvailable(deps),
+    available: await personalizationAvailable(deps, viewer),
     historyResetAt: prefs.historyResetAt?.toISOString() ?? null,
     notInterested: { videos: hidden.videos.size, players: hidden.players.size, skills: [...hidden.skills] as never },
   };
@@ -138,7 +145,7 @@ export async function recommendationExport(deps: Deps, userId: string) {
 export const recommendationRoutes = [
   route(
     { method: 'get', path: '/v1/me/recommendations', summary: 'My For You settings and "Not interested" signals', tag: 'feed', auth: 'user', response: RecommendationSettingsView },
-    async (ctx) => settingsView(ctx.deps, ctx.me().userId),
+    async (ctx) => settingsView(ctx.deps, ctx.me()),
   ),
   route(
     { method: 'patch', path: '/v1/me/recommendations', summary: 'Turn For You personalisation on or off', tag: 'feed', auth: 'user', body: UpdateRecommendationSettingsRequest, response: RecommendationSettingsView },
@@ -146,7 +153,7 @@ export const recommendationRoutes = [
       const me = ctx.me().userId;
       await ctx.deps.db.insertInto('recommendation_preferences').values({ user_id: me, personalize: ctx.body.personalize })
         .onConflict((oc) => oc.column('user_id').doUpdateSet({ personalize: ctx.body.personalize, updated_at: ctx.deps.now() })).execute();
-      return settingsView(ctx.deps, me);
+      return settingsView(ctx.deps, ctx.me());
     },
   ),
   route(
@@ -159,7 +166,7 @@ export const recommendationRoutes = [
         await tx.insertInto('recommendation_preferences').values({ user_id: me, history_reset_at: now })
           .onConflict((oc) => oc.column('user_id').doUpdateSet({ history_reset_at: now, updated_at: now })).execute();
       });
-      return settingsView(ctx.deps, me);
+      return settingsView(ctx.deps, ctx.me());
     },
   ),
   route(

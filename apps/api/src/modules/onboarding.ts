@@ -17,7 +17,7 @@ const INVITATION_TTL_MS = 7 * 24 * 3600 * 1000;
 export const onboardingRoutes = [
   route(
     { method: 'post', path: '/v1/onboarding/register', summary: 'Register the signed-in identity as a user', tag: 'onboarding', auth: 'identity', body: RegisterRequest, response: RegisterResponse, status: 201, rateLimit: { max: 10, timeWindow: '1 hour' } },
-    async ({ deps, identity, actor, body }) => {
+    async ({ deps, identity, actor, body, track }) => {
       if (!identity) throw new ApiError(401, 'UNAUTHENTICATED', 'sign in required');
       if (actor) throw conflict('ALREADY_REGISTERED', 'this account is already registered');
 
@@ -78,6 +78,7 @@ export const onboardingRoutes = [
         await emit(tx, 'user.registered', { userId });
       });
 
+      await track('signup_completed', { roles: body.roles, scoutApplication: Boolean(body.scoutApplication), locale: body.locale, country: body.countryCode }, { userId, minor });
       return { userId, status: age.guardianRequired ? 'pending_consent' : 'active', guardianRequired: age.guardianRequired } as const;
     },
   ),

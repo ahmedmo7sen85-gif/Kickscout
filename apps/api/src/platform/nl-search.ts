@@ -2,9 +2,16 @@ import { z } from 'zod';
 import { AgeBand, CountryCode, Foot, Position, SavedSearchFilters, SkillKey } from '@fp/contracts';
 import { FEET, POSITIONS, SKILL_KEYS, parseScoutQueryRules } from '@fp/domain';
 import type { SkillVocabulary } from '@fp/domain';
+import type { Actor } from '@fp/domain';
 import type { Deps } from '../deps.js';
+import { isEnabled } from './flags.js';
 
 export type ScoutFilters = z.output<typeof SavedSearchFilters>;
+
+/** On for everyone with NL_SCOUT_SEARCH=on, otherwise for whoever the `nl_scout_search` flag includes. */
+export async function nlScoutSearchEnabled(deps: Deps, actor: Actor | null): Promise<boolean> {
+  return deps.config.NL_SCOUT_SEARCH === 'on' || (await isEnabled(deps, 'nl_scout_search', actor));
+}
 
 export interface NlParse {
   filters: ScoutFilters;

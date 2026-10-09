@@ -7,7 +7,7 @@ import {
 } from '@fp/contracts';
 import { describeScoutFilters, isMinor } from '@fp/domain';
 import type { Actor } from '@fp/domain';
-import { parseNlQuery } from '../platform/nl-search.js';
+import { nlScoutSearchEnabled, parseNlQuery } from '../platform/nl-search.js';
 import type { ScoutFilters } from '../platform/nl-search.js';
 import type { Deps } from '../deps.js';
 import { route } from '../platform/route.js';
@@ -22,6 +22,12 @@ import { organizationVerificationTarget } from './orgs.js';
 import { consumeScoutSearch, entitlementsFor, shortlistSlotsUsed } from '../platform/entitlements.js';
 
 const Uuid = z.uuid();
+/** Scout-search filters whose use (not value) is recorded in the scout_search analytics event. */
+const SCOUT_FILTER_KEYS = ['q', 'country', 'position', 'foot', 'skill', 'ageGroup', 'verifiedOnly', 'minFollowers'] as const;
+/** Which filters a search used, never their values. */
+function usedFilterKeys(f: Partial<Record<(typeof SCOUT_FILTER_KEYS)[number], unknown>>) {
+  return SCOUT_FILTER_KEYS.filter((k) => f[k] !== undefined && f[k] !== '' && f[k] !== false);
+}
 
 async function ownShortlist(deps: Deps, ownerId: string, id: string | undefined) {
   const parsed = Uuid.safeParse(id);
@@ -57,7 +63,9 @@ export const scoutRoutes = [
       // A search counts once against the plan's monthly quota; loading more pages of it does not.
       if (!f.cursor) await chargeScoutSearch(ctx.deps, ctx.me());
       const { cursor: _c, limit: _l, ...filters } = f;
-      return searchPlayers(ctx.deps, ctx.me(), filters, { limit: f.limit, cursor: f.cursor });
+      const results = await searchPlayers(ctx.deps, ctx.me(), filters, { limit: f.limit, cursor: f.cursor });
+      await ctx.track('scout_search', { filters: usedFilterKeys(f), results: results.items.length, firstPage: !f.cursor });
+      return results;
     },
   ),
 
@@ -67,20 +75,21 @@ export const scoutRoutes = [
       tag: 'scout', auth: 'user', body: NlScoutSearchRequest, response: NlScoutSearchResponse, rateLimit: { max: 30, timeWindow: '1 minute' },
     },
     async (ctx) => {
-      // TODO(phase E1): gate on the `nl_scout_search` feature flag; NL_SCOUT_SEARCH is the switch until then.
-      if (ctx.deps.config.NL_SCOUT_SEARCH !== 'on') throw new ApiError(503, 'FEATURE_DISABLED', 'natural-language search is not switched on yet');
+      if (!(await nlScoutSearchEnabled(ctx.deps, ctx.actor))) throw new ApiError(503, 'FEATURE_DISABLED', 'natural-language search is not switched on yet');
       ctx.authorize({ kind: 'scout.use' });
       const me = ctx.me();
       // One natural-language search is one search against the quota, charged before any AI call.
       await chargeScoutSearch(ctx.deps, me);
       const parsed = await parseNlQuery(ctx.deps, me.userId, ctx.body.query, ctx.req.log);
       const names = await skillNameLookup(ctx.deps);
+      const results = await searchPlayers(ctx.deps, me, parsed.filters, { limit: ctx.body.limit }, { nl: true, parser: parsed.parser });
+      await ctx.track('scout_search', { filters: usedFilterKeys(parsed.filters), results: results.items.length, firstPage: true });
       return {
         filters: parsed.filters,
         parser: parsed.parser,
         model: parsed.model,
         explanation: describeScoutFilters(parsed.filters, names),
-        results: await searchPlayers(ctx.deps, me, parsed.filters, { limit: ctx.body.limit }, { nl: true, parser: parsed.parser }),
+        results,
       };
     },
   ),
@@ -145,8 +154,10 @@ export const scoutRoutes = [
         if (limits.shortlistSlots !== null && !slots.alreadyListed && slots.used >= limits.shortlistSlots) {
           throw new ApiError(403, 'QUOTA_SHORTLIST_SLOTS', `your plan includes ${limits.shortlistSlots} shortlist slots; remove a player or upgrade for unlimited shortlists`);
         }
-        await tx.insertInto('shortlist_players').values({ shortlist_id: s.id, player_id: playerId })
-          .onConflict((oc) => oc.columns(['shortlist_id', 'player_id']).doNothing()).execute();
+        return tx.insertInto('shortlist_players').values({ shortlist_id: s.id, player_id: playerId })
+          .onConflict((oc) => oc.columns(['shortlist_id', 'player_id']).doNothing()).returning('player_id').executeTakeFirst();
+      }).then(async (added) => {
+        if (added) await ctx.track('shortlist_add', { shortlistId: s.id, playerId });
       });
     },
   ),
@@ -194,7 +205,8 @@ export const scoutRoutes = [
       ctx.authorize({ kind: 'scout.use' });
       const playerId = Uuid.safeParse(ctx.params.playerId);
       if (!playerId.success) throw notFound('player');
-      await sendContactRequest(ctx.deps, ctx.me(), playerId.data, ctx.body.message);
+      const req = await sendContactRequest(ctx.deps, ctx.me(), playerId.data, ctx.body.message);
+      await ctx.track('contact_requested', { contactRequestId: req.id, playerId: playerId.data, origin: 'profile' });
     },
   ),
 
@@ -237,6 +249,9 @@ export const scoutRoutes = [
         await tx.updateTable('contact_requests').set({ status, responded_at: ctx.deps.now() }).where('id', '=', r.id).execute();
         await notify(tx, r.scout_id, `contact.${status}`, { requestId: r.id, playerId: r.player_id });
         await audit(tx, { actorId: me.userId, action: `scout.contact_${status}`, targetKind: 'user', targetId: r.player_id, metadata: { requestId: r.id } });
+        return { id: r.id, status };
+      }).then(async (answered) => {
+        if (answered.status === 'accepted') await ctx.track('contact_accepted', { contactRequestId: answered.id });
       });
     },
   ),

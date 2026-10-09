@@ -37,6 +37,7 @@ function Gate() {
   if (!isStaff) return <EmptyState icon="shield" title={t.admin.forbiddenTitle} text={t.admin.forbiddenText} />;
   return (
     <div className="stack stack--loose">
+      <p><Link href="/admin/metrics" className="link">{t.admin.metricsLink}</Link></p>
       <Stats />
       <Moderation />
       <AiUsage />

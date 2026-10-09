@@ -19,7 +19,7 @@ export interface I18nValue {
 export const I18nContext = createContext<I18nValue | null>(null);
 
 export function createI18nValue(locale: Locale, setLocale: (l: Locale) => void = () => {}): I18nValue {
-  const tag = locale === 'ar' ? 'ar' : 'en';
+  const tag = locale;
   const nf = new Intl.NumberFormat(tag, { notation: 'compact', maximumFractionDigits: 1 });
   const df = new Intl.DateTimeFormat(tag, { dateStyle: 'medium' });
   return {

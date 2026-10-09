@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import { pageMetadata } from '@/lib/seo';
 import { notFound } from 'next/navigation';
 import { LegalPage } from '@/components/legal/LegalPage';
 import { LEGAL_DOCS, legalDoc } from '@/lib/legal';
@@ -12,7 +13,7 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
   const doc = legalDoc((await params).slug);
   if (!doc) return {};
   const { t } = await getServerDict();
-  return { title: t.legal[doc.titleKey], description: doc.summary };
+  return pageMetadata({ t, title: t.legal[doc.titleKey], description: doc.summary, path: `/legal/${doc.slug}` });
 }
 
 export default async function Page({ params }: { params: Promise<{ slug: string }> }) {

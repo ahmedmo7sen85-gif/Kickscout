@@ -35,6 +35,7 @@ async function loadPrivacy(db: Database, userId: string): Promise<PrivacySetting
     showCountry: r.show_country,
     showRegion: r.show_region,
     showAge: r.show_age,
+    allowAnalytics: r.allow_analytics,
   };
 }
 
@@ -99,6 +100,9 @@ async function deleteAccount(tx: Transaction<DB>, subjectId: string, actorId: st
   await tx.updateTable('guardian_relationships').set({ status: 'revoked' })
     .where((eb) => eb.or([eb('guardian_user_id', '=', subjectId), eb('minor_user_id', '=', subjectId)])).execute();
   await tx.updateTable('guardian_invitations').set({ status: 'expired' }).where('minor_user_id', '=', subjectId).where('status', '=', 'pending').execute();
+  // Raw analytics about the person go with the account; only anonymous daily totals remain.
+  await tx.deleteFrom('analytics_events').where('user_id', '=', subjectId).execute();
+  await tx.deleteFrom('qualified_discoveries').where((eb) => eb.or([eb('player_id', '=', subjectId), eb('discoverer_id', '=', subjectId)])).execute();
   await audit(tx, { actorId, action: 'account.deleted', targetKind: 'user', targetId: subjectId, metadata: { by: actorId === subjectId ? 'self' : 'guardian', videos: videos.length } });
   await emit(tx, 'user.deleted', { userId: subjectId });
 }
@@ -167,7 +171,7 @@ export const accountRoutes = [
         await tx.updateTable('privacy_settings').set({
           profile_visibility: next.profileVisibility, region_precision: next.regionPrecision, comments: next.comments,
           allow_scout_discovery: next.allowScoutDiscovery, allow_contact_requests: next.allowContactRequests,
-          show_country: next.showCountry, show_region: next.showRegion, show_age: next.showAge, updated_at: ctx.deps.now(),
+          show_country: next.showCountry, show_region: next.showRegion, show_age: next.showAge, allow_analytics: next.allowAnalytics, updated_at: ctx.deps.now(),
         }).where('user_id', '=', subjectId).execute();
         await audit(tx, { actorId: me.userId, action: 'privacy.updated', targetKind: 'user', targetId: subjectId, metadata: { changes } });
       });

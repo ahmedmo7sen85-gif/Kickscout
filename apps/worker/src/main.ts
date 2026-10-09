@@ -4,6 +4,7 @@ import { loadConfig } from './config.js';
 import type { Logger } from './pipeline.js';
 import { S3VideoStorage } from './storage/s3.js';
 import { Worker } from './worker.js';
+import { queueDepth } from './queue.js';
 
 const log: Logger = {
   info: (msg, fields) => console.log(JSON.stringify({ level: 'info', msg, ...fields, time: new Date().toISOString() })),
@@ -47,3 +48,17 @@ process.on('SIGTERM', () => void shutdown('SIGTERM'));
 process.on('SIGINT', () => void shutdown('SIGINT'));
 
 worker.start();
+
+// Batch metrics for the long-running worker: job outcomes and queue depth every five minutes.
+const METRICS_INTERVAL_MS = 5 * 60_000;
+let last = { ...worker.stats };
+const metrics = setInterval(() => {
+  const s = worker.stats;
+  queueDepth(db)
+    .then((queue) => log.info('worker metrics', {
+      done: s.done - last.done, retried: s.retried - last.retried, failed: s.failed - last.failed, busyMs: s.busyMs - last.busyMs, ...queue,
+    }))
+    .catch((err: Error) => log.warn('worker metrics failed', { error: err.message }))
+    .finally(() => { last = { ...s }; });
+}, METRICS_INTERVAL_MS);
+metrics.unref();

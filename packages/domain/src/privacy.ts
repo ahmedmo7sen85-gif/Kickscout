@@ -25,6 +25,8 @@ export interface PrivacySettings {
   /** The broad region and city. */
   showRegion: boolean;
   showAge: boolean;
+  /** Off: only strictly necessary product-analytics events are recorded. */
+  allowAnalytics: boolean;
 }
 
 export interface StoredProfile {
@@ -119,7 +121,7 @@ export function projectProfile(p: StoredProfile, viewer: Relation): ProjectedPro
 
 const VISIBILITY_RANK: Record<ProfileVisibility, number> = { private: 0, followers: 1, unlisted: 2, public: 3 };
 const COMMENTS_RANK: Record<CommentsSetting, number> = { off: 0, followers: 1, everyone: 2 };
-const TOGGLES = ['directMessages', 'allowScoutDiscovery', 'allowContactRequests', 'showCountry', 'showRegion', 'showAge'] as const;
+const TOGGLES = ['directMessages', 'allowScoutDiscovery', 'allowContactRequests', 'showCountry', 'showRegion', 'showAge', 'allowAnalytics'] as const;
 
 /** True when `next` exposes anything `current` did not. For a minor only the guardian may loosen. */
 export function loosensPrivacy(current: PrivacySettings, next: PrivacySettings): boolean {

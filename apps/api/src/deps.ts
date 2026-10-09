@@ -5,6 +5,7 @@ import type { ObjectStorage } from './platform/storage.js';
 import type { Mailer } from './platform/mailer.js';
 import type { PaymentProvider } from './platform/billing/provider.js';
 import type { AiRouter } from '@fp/ai';
+import type { ErrorReporter } from './platform/error-reporter.js';
 
 export interface Deps {
   config: Config;
@@ -18,4 +19,6 @@ export interface Deps {
   ai: AiRouter;
   dobKey: Buffer;
   now: () => Date;
+  /** Unexpected errors go here; defaults to a structured log line (LogErrorReporter). */
+  errorReporter?: ErrorReporter;
 }

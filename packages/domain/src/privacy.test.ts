@@ -13,7 +13,7 @@ const base = (over: Partial<StoredProfile> = {}): StoredProfile => ({
   region: { macro: 'north-africa', country: 'EG', city: 'cairo' },
   privacy: {
     profileVisibility: 'public', regionPrecision: 'city', directMessages: true, comments: 'everyone',
-    allowScoutDiscovery: true, allowContactRequests: true, showCountry: true, showRegion: true, showAge: true,
+    allowScoutDiscovery: true, allowContactRequests: true, showCountry: true, showRegion: true, showAge: true, allowAnalytics: true,
   },
   player: { primaryPosition: 'RW', secondaryPositions: [], preferredFoot: 'left' },
   ...over,
@@ -96,6 +96,9 @@ describe('loosensPrivacy', () => {
     expect(loosensPrivacy({ ...s, showAge: false }, s)).toBe(true);
     expect(loosensPrivacy({ ...s, comments: 'followers' }, s)).toBe(true);
     expect(loosensPrivacy({ ...s, regionPrecision: 'country' }, s)).toBe(true);
+    // Turning analytics back on is a loosening (a minor needs their guardian); turning it off is not.
+    expect(loosensPrivacy({ ...s, allowAnalytics: false }, s)).toBe(true);
+    expect(loosensPrivacy(s, { ...s, allowAnalytics: false })).toBe(false);
   });
   it('treats stricter changes as safe', () => {
     expect(loosensPrivacy(s, { ...s, profileVisibility: 'unlisted', showCountry: false, allowContactRequests: false, comments: 'off' })).toBe(false);
