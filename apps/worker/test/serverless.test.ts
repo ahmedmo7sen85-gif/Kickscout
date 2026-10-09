@@ -2,7 +2,7 @@ import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import handler, { runBatch } from '../src/serverless.js';
-import { FakeAnalyzer, SAFE, createEnv, createTestDb, getVideo, makeClips, seedUser, seedVideo } from './helpers.js';
+import { createEnv, scriptedAi, createTestDb, getVideo, makeClips, seedUser, seedVideo } from './helpers.js';
 import type { Clips, Env, TestDb } from './helpers.js';
 import { rm } from 'node:fs/promises';
 
@@ -49,7 +49,7 @@ describe('serverless worker entry', () => {
     const owner = await seedUser(env.db);
     const a = await seedVideo(env, { owner, clip: clips.valid });
     const b = await seedVideo(env, { owner, clip: clips.vertical });
-    const jobs = await runBatch(env.worker(FakeAnalyzer.returning(SAFE)), { claimBudgetMs: 60_000 });
+    const jobs = await runBatch(env.worker(scriptedAi(env.db).classifiers), { claimBudgetMs: 60_000 });
     expect(jobs).toBe(2);
     expect((await getVideo(env.db, a.videoId)).status).toBe('published');
     expect((await getVideo(env.db, b.videoId)).status).toBe('published');

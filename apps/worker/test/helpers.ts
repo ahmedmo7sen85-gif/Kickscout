@@ -8,7 +8,12 @@ import pg from 'pg';
 import { v7 as uuidv7 } from 'uuid';
 import { createDb, migrate } from '@fp/db';
 import type { Database } from '@fp/db';
-import type { Analysis, AnalysisInput, AnalysisOutcome, VideoAnalyzer } from '../src/analyzer/types.js';
+import { AiRouter, FakeAiProvider, dbCallRecorder, fakeResponse, routingFromEnv } from '@fp/ai';
+import type { AiRequest } from '@fp/ai';
+import type { GuardianPolicy } from '@fp/domain';
+import type { CategoryProbability } from '../src/guardian/types.js';
+import { guardianClassifiers } from '../src/guardian/factory.js';
+import type { GuardianClassifiers } from '../src/guardian/service.js';
 import { LocalVideoStorage } from '../src/storage/local.js';
 import type { Logger, PipelineDeps } from '../src/pipeline.js';
 import { Worker } from '../src/worker.js';
@@ -76,6 +81,12 @@ export interface Clips {
   text: string;
   /** First half of a valid MP4: a truncated upload. */
   truncated: string;
+  /** 9 s: 4 s of test pattern, a 1 s "inserted" scene of colour bars at 4-5 s, then 4 s of test pattern. */
+  spliced: string;
+  /** 4 s of a moving fractal: distinctive frames for perceptual-hash tests. */
+  textured: string;
+  /** The same fractal clip mirrored, cropped, rescaled and re-encoded: an edited re-upload. */
+  texturedEdited: string;
 }
 
 export async function makeClips(): Promise<Clips> {
@@ -92,6 +103,12 @@ export async function makeClips(): Promise<Clips> {
     ffmpeg(['-f', 'lavfi', '-i', 'testsrc=size=320x240:rate=10:duration=2', '-c:v', 'libvpx-vp9', '-deadline', 'realtime', '-cpu-used', '8', '-b:v', '200k', p('clip.webm')]),
     writeFile(p('text.mp4'), 'this is not a video, just text pretending to be one\n'.repeat(20)),
   ]);
+  await ffmpeg([
+    '-f', 'lavfi', '-i', 'testsrc2=size=320x240:rate=10:duration=4', '-f', 'lavfi', '-i', 'smptebars=size=320x240:rate=10:duration=1',
+    '-f', 'lavfi', '-i', 'testsrc2=size=320x240:rate=10:duration=4', '-filter_complex', '[0:v][1:v][2:v]concat=n=3:v=1:a=0[v]', '-map', '[v]', ...x264, p('spliced.mp4'),
+  ]);
+  await ffmpeg(['-f', 'lavfi', '-i', 'mandelbrot=size=320x240:rate=10', '-t', '4', ...x264, p('textured.mp4')]);
+  await ffmpeg(['-i', p('textured.mp4'), '-vf', 'hflip,crop=iw*0.92:ih*0.92,scale=352:264', ...x264, '-crf', '30', p('textured-edited.mp4')]);
   // Truncated: keep the moov-less head of a non-faststart file so the decoder sees a broken stream.
   await ffmpeg(['-f', 'lavfi', '-i', 'testsrc=size=320x240:rate=10:duration=4', ...x264, '-movflags', '+faststart', p('full.mp4')]);
   const full = await readFile(p('full.mp4'));
@@ -99,6 +116,7 @@ export async function makeClips(): Promise<Clips> {
   return {
     dir, valid: p('valid.mp4'), six: p('six.mp4'), vertical: p('vertical.mp4'), hd: p('hd.mp4'), long: p('long.mp4'),
     tiny: p('tiny.mp4'), webm: p('clip.webm'), text: p('text.mp4'), truncated: p('truncated.mp4'),
+    spliced: p('spliced.mp4'), textured: p('textured.mp4'), texturedEdited: p('textured-edited.mp4'),
   };
 }
 
@@ -113,30 +131,81 @@ export async function probeSize(file: string): Promise<{ width: number; height: 
   return { width: s.width, height: s.height, codec: s.codec_name };
 }
 
-// ---------------------------------------------------------------- analyzers
+// ---------------------------------------------------------------- scripted AI
 
-export const SAFE: Analysis = {
-  footballPresent: true,
-  playersVisible: 1,
-  context: 'training',
-  skills: [
-    { key: 'juggling', confidence: 0.82 },
-    { key: 'ball_control', confidence: 0.55 },
-    { key: 'elastico', confidence: 0.2 },
-  ],
-  moderation: { verdict: 'safe', categories: [], explanation: 'A player juggling a ball on a pitch.' },
-};
+export interface Segment {
+  fromMs: number;
+  toMs: number;
+  football?: boolean;
+  categories?: CategoryProbability[];
+}
 
-export class FakeAnalyzer implements VideoAnalyzer {
-  readonly calls: AnalysisInput[] = [];
-  constructor(private readonly respond: (input: AnalysisInput) => AnalysisOutcome | Promise<AnalysisOutcome>) {}
-  async analyze(input: AnalysisInput) {
-    this.calls.push(input);
-    return this.respond(input);
-  }
-  static returning(analysis: Analysis) {
-    return new FakeAnalyzer(() => ({ kind: 'result', analysis, model: 'fake-model' }));
-  }
+export interface Script {
+  /** What each part of the clip "shows". Defaults to football everywhere. */
+  segments?: Segment[];
+  footballRelevance?: number;
+  staticImage?: boolean;
+  minorsMayBePresent?: boolean;
+  confidence?: number;
+  metadataText?: CategoryProbability[];
+  onScreenText?: CategoryProbability[];
+  /** Overrides for the deep (second) look only: a different opinion. */
+  deep?: Omit<Script, 'deep' | 'refuse'>;
+  refuse?: 'screen' | 'deep';
+  skills?: { key: string; confidence: number }[];
+}
+
+export const SCREEN_MODEL = 'claude-haiku-5-5';
+export const DEEP_MODEL = 'claude-opus-5-5';
+
+/** Frame times the classifier was shown, parsed from the "Frame i of n, at X s" labels. */
+export function frameTimes(req: AiRequest): number[] {
+  return req.content.flatMap((c) => (c.type === 'text' ? [...c.text.matchAll(/^Frame \d+ of \d+, at ([0-9.]+) s:/g)].map((m) => Math.round(Number(m[1]) * 1000)) : []));
+}
+
+/**
+ * A fake provider that answers like a classifier looking at a clip described by `script`: each frame is
+ * labelled from the segment its timestamp falls in. Lets tests check that sampling really covers the
+ * whole clip (a prohibited segment is only reported if a frame lands in it).
+ */
+export function scriptedProvider(script: Script = {}): FakeAiProvider {
+  return new FakeAiProvider((req) => {
+    const deep = req.model === DEEP_MODEL;
+    if (script.refuse === (deep ? 'deep' : 'screen')) {
+      return fakeResponse({ stop: 'refusal', rawStop: 'refusal', model: req.model, refusal: { explanation: 'Declined.', category: null } });
+    }
+    const s: Omit<Script, 'deep'> = deep ? { ...script, ...script.deep } : script;
+    const times = frameTimes(req);
+    const frames = times.map((t, i) => {
+      const seg = s.segments?.find((g) => t >= g.fromMs && t < g.toMs);
+      return { frame: i + 1, football: seg?.football ?? true, categories: seg?.categories ?? [] };
+    });
+    const share = frames.length ? frames.filter((f) => f.football).length / frames.length : 0;
+    const body: Record<string, unknown> = {
+      footballRelevance: s.footballRelevance ?? (share >= 0.5 ? 0.95 : share > 0 ? 0.5 : 0.03),
+      footballKind: share > 0 ? 'skills' : 'none',
+      staticImage: s.staticImage ?? false,
+      minorsMayBePresent: s.minorsMayBePresent ?? false,
+      frames,
+      onScreenText: s.onScreenText ?? [],
+      metadataText: s.metadataText ?? [],
+      confidence: s.confidence ?? 0.9,
+      explanation: 'Scripted answer.',
+    };
+    if (deep) Object.assign(body, { playersVisible: 1, context: 'training', skills: s.skills ?? [{ key: 'juggling', confidence: 0.82 }, { key: 'ball_control', confidence: 0.55 }, { key: 'elastico', confidence: 0.2 }] });
+    return fakeResponse({ text: JSON.stringify(body), model: req.model, usage: { inputTokens: 200 * times.length + 900, outputTokens: 300 } });
+  });
+}
+
+export interface Ai {
+  provider: FakeAiProvider;
+  classifiers: GuardianClassifiers;
+}
+
+/** Guardian classifiers on a scripted provider, with routing defaults (screen on the light model, deep on the heavy one). */
+export function scriptedAi(db: Database, script: Script = {}, provider = scriptedProvider(script)): Ai {
+  const router = new AiRouter(provider, routingFromEnv({}), { recorder: dbCallRecorder(db, uuidv7), sleep: async () => {} });
+  return { provider, classifiers: guardianClassifiers(router) };
 }
 
 // ---------------------------------------------------------------- environment
@@ -145,21 +214,21 @@ export interface Env {
   db: Database;
   storage: LocalVideoStorage;
   root: string;
-  deps(analyzer: VideoAnalyzer | null): PipelineDeps;
-  worker(analyzer: VideoAnalyzer | null, opts?: Partial<WorkerOptions>): Worker;
+  deps(classifiers: GuardianClassifiers | null, policy?: GuardianPolicy): PipelineDeps;
+  worker(classifiers: GuardianClassifiers | null, opts?: Partial<WorkerOptions>, policy?: GuardianPolicy): Worker;
   close(): Promise<void>;
 }
 
 export async function createEnv(db: Database): Promise<Env> {
   const root = await mkdtemp(path.join(os.tmpdir(), 'fp-worker-storage-'));
   const storage = new LocalVideoStorage(root);
-  const deps = (analyzer: VideoAnalyzer | null): PipelineDeps => ({
-    db, storage, analyzer, media: { ffmpeg: FFMPEG, ffprobe: FFPROBE }, maxOriginalBytes: 50 * 1024 * 1024, log: silentLog,
+  const deps = (classifiers: GuardianClassifiers | null, policy?: GuardianPolicy): PipelineDeps => ({
+    db, storage, classifiers, policy, media: { ffmpeg: FFMPEG, ffprobe: FFPROBE }, maxOriginalBytes: 50 * 1024 * 1024, log: silentLog,
   });
   return {
     db, storage, root, deps,
-    worker: (analyzer, opts = {}) =>
-      new Worker(deps(analyzer), { concurrency: 1, jobTimeoutMs: 60_000, pollIntervalMs: 50, retryBaseMs: 1_000, ...opts }),
+    worker: (classifiers, opts = {}, policy) =>
+      new Worker(deps(classifiers, policy), { concurrency: 1, jobTimeoutMs: 60_000, pollIntervalMs: 50, retryBaseMs: 1_000, ...opts }),
     close: () => rm(root, { recursive: true, force: true }),
   };
 }
@@ -186,6 +255,9 @@ export interface SeedVideo {
   maxDurationMs?: number | null;
   /** Append a unique MP4 'free' box so each upload has its own sha256 (default true for .mp4 clips). */
   unique?: boolean;
+  title?: string;
+  description?: string | null;
+  hashtags?: string[];
 }
 
 /** Puts the clip in "storage" and inserts the video row as the API leaves it after upload completion, plus its job. */
@@ -207,10 +279,11 @@ export async function seedVideo(env: Env, v: SeedVideo, maxAttempts?: number): P
     .insertInto('videos')
     .values({
       id: videoId, owner_user_id: v.owner, status: v.status ?? 'processing', original_key: key, declared_type: v.declaredType ?? 'video/mp4',
-      size_bytes: 1000, title: 'Test clip', trim_start_ms: v.trimStartMs ?? null, trim_end_ms: v.trimEndMs ?? null,
+      size_bytes: 1000, title: v.title ?? 'Test clip', description: v.description ?? null, trim_start_ms: v.trimStartMs ?? null, trim_end_ms: v.trimEndMs ?? null,
       max_duration_ms: v.maxDurationMs ?? null,
     })
     .execute();
+  if (v.hashtags?.length) await env.db.insertInto('video_hashtags').values(v.hashtags.map((tag) => ({ video_id: videoId, tag }))).execute();
   const job = await env.db
     .insertInto('jobs')
     .values({ kind: 'video.process', payload: JSON.stringify({ videoId }), ...(maxAttempts ? { max_attempts: maxAttempts } : {}) })

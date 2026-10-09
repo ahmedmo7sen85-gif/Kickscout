@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import {
   AiOutputError, AiPermanentError, AiRouter, AiTransientError, AiUnavailableError, ClaudeProvider, FakeAiProvider, MemoryCallRecorder,
-  assertNoRatingFields, fakeResponse, findForbiddenKeys, routingFromEnv, DEFAULT_HEAVY_MODEL, DEFAULT_LIGHT_MODEL,
+  assertNoRatingFields, estimateCostUsd, fakeResponse, findForbiddenKeys, routingFromEnv, DEFAULT_HEAVY_MODEL, DEFAULT_LIGHT_MODEL, DEFAULT_SCREEN_MODEL,
 } from './index.js';
 import type { ClaudeCreateParams, ClaudeMessage, RoutingTable } from './index.js';
 
@@ -33,6 +33,18 @@ describe('routing', () => {
     expect(t.nl_scout_query).toMatchObject({ model: 'claude-sonnet-5-5', maxTokens: 512, timeoutMs: 10_000 });
     expect(routingFromEnv({ AI_MODEL: 'a', AI_MODEL_HEAVY: 'b' }).video_analysis.model).toBe('b');
     expect(() => routingFromEnv({ AI_EFFORT_LIGHT: 'extreme' })).toThrow(/AI_EFFORT_LIGHT/);
+  });
+
+  it('screens videos on its own cheap tier, configurable separately', () => {
+    expect(routingFromEnv({}).video_screening).toMatchObject({ tier: 'screen', model: DEFAULT_SCREEN_MODEL, effort: 'low', serverFallbacks: false });
+    expect(DEFAULT_SCREEN_MODEL).toBe('claude-haiku-5-5');
+    expect(routingFromEnv({ AI_MODEL_SCREEN: 'claude-sonnet-5-5', AI_EFFORT_SCREEN: 'medium' }).video_screening).toMatchObject({ model: 'claude-sonnet-5-5', effort: 'medium' });
+  });
+
+  it('estimates spend per model, pricing unknown models high so a budget cap errs on the safe side', () => {
+    expect(estimateCostUsd('claude-haiku-5-5', 1_000_000, 1_000_000)).toBeCloseTo(0.6);
+    expect(estimateCostUsd('claude-opus-5-5', 1_000_000, 0)).toBeCloseTo(4);
+    expect(estimateCostUsd('some-new-model', 1_000_000, 0)).toBeGreaterThanOrEqual(4);
   });
 });
 

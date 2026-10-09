@@ -5,7 +5,7 @@
  */
 
 /** Every kind of AI work the platform does. Each one is routed to a model tier (see routing.ts). */
-export const AI_TASKS = ['video_analysis', 'nl_scout_query'] as const;
+export const AI_TASKS = ['video_analysis', 'video_screening', 'nl_scout_query'] as const;
 export type AiTask = (typeof AI_TASKS)[number];
 
 export const AI_EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'] as const;

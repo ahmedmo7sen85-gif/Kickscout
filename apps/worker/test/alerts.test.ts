@@ -54,6 +54,7 @@ async function clip(owner: string, opts: { publishedAt?: Date; skill?: string; s
   await env.db.insertInto('videos').values({
     id, owner_user_id: owner, original_key: `originals/${id}.mp4`, declared_type: 'video/mp4', size_bytes: 1, title: 'clip',
     status: opts.status ?? 'published', visibility: opts.visibility ?? 'public', published_at: opts.publishedAt ?? minutesAgo(10),
+    safety_status: (opts.status ?? 'published') === 'published' ? 'APPROVED' : 'HUMAN_REVIEW',
   }).execute();
   if (opts.skill) await env.db.insertInto('video_skills').values({ video_id: id, skill_key: opts.skill, source: 'ai', confidence: 0.9 }).execute();
   return id;

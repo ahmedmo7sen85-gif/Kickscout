@@ -1,5 +1,6 @@
 import { createDb } from '@fp/db';
-import { createVideoAnalyzer } from './analyzer/factory.js';
+import { createGuardianClassifiers } from './guardian/factory.js';
+import { policyFromEnv } from './guardian/service.js';
 import { loadConfig } from './config.js';
 import type { Logger } from './pipeline.js';
 import { S3VideoStorage } from './storage/s3.js';
@@ -27,11 +28,12 @@ const storage = new S3VideoStorage({
   deliveryBucket: config.S3_BUCKET_DELIVERY,
 });
 
-const analyzer = createVideoAnalyzer(config.ANTHROPIC_API_KEY, db, log);
-if (!analyzer) log.warn('ANTHROPIC_API_KEY is not set: every video will wait for human review');
+const classifiers = createGuardianClassifiers(config.ANTHROPIC_API_KEY, db, log);
+const policy = policyFromEnv();
+if (!classifiers) log.warn('ANTHROPIC_API_KEY is not set: every Guardian scan fails closed and videos wait for human review');
 
 const worker = new Worker(
-  { db, storage, analyzer, media: { ffmpeg: config.FFMPEG_PATH, ffprobe: config.FFPROBE_PATH }, maxOriginalBytes: config.MAX_ORIGINAL_BYTES, workDir: config.WORK_DIR, log },
+  { db, storage, classifiers, policy, media: { ffmpeg: config.FFMPEG_PATH, ffprobe: config.FFPROBE_PATH }, maxOriginalBytes: config.MAX_ORIGINAL_BYTES, workDir: config.WORK_DIR, log },
   { concurrency: config.WORKER_CONCURRENCY, jobTimeoutMs: config.JOB_TIMEOUT_MS, pollIntervalMs: config.JOB_POLL_INTERVAL_MS, retryBaseMs: config.JOB_RETRY_BASE_MS },
 );
 

@@ -27,6 +27,19 @@ export type Numeric = ColumnType<string, number | string, number | string>;
 
 export type Timestamp = ColumnType<Date, Date | string, Date | string>;
 
+export interface AccountStrikes {
+  case_id: string | null;
+  category: string;
+  created_at: Generated<Timestamp>;
+  expires_at: Timestamp;
+  id: string;
+  severity: string;
+  source: string;
+  user_id: string;
+  video_id: string | null;
+  voided_at: Timestamp | null;
+}
+
 export interface AgeRecords {
   age_band: string;
   country_code: string;
@@ -75,6 +88,7 @@ export interface AnalyticsEvents {
 export interface AuditLogs {
   action: string;
   actor_id: string | null;
+  case_id: string | null;
   created_at: Generated<Timestamp>;
   id: Generated<Int8>;
   metadata: Generated<Json>;
@@ -325,8 +339,33 @@ export interface Likes {
   video_id: string;
 }
 
+export interface ModerationAppeals {
+  case_id: string | null;
+  created_at: Generated<Timestamp>;
+  decided_at: Timestamp | null;
+  decided_by: string | null;
+  explanation: string;
+  id: string;
+  status: Generated<string>;
+  user_id: string;
+  video_id: string;
+}
+
+export interface ModerationAuditLogs {
+  action: string | null;
+  actor_id: string | null;
+  case_id: string | null;
+  id: Int8 | null;
+  metadata: Json | null;
+  target_id: string | null;
+  target_kind: string | null;
+  timestamp: Timestamp | null;
+}
+
 export interface ModerationCases {
   ai_verdict: Json | null;
+  appeal_status: string | null;
+  assigned_reviewer: string | null;
   categories: Generated<string[]>;
   created_at: Generated<Timestamp>;
   decided_at: Timestamp | null;
@@ -335,11 +374,15 @@ export interface ModerationCases {
   decision_note: string | null;
   id: string;
   priority: Generated<number>;
+  reason: string | null;
   report_count: Generated<number>;
+  restricted: Generated<boolean>;
+  result_id: string | null;
   source: string;
   status: Generated<string>;
   target_id: string;
   target_kind: string;
+  user_id: string | null;
 }
 
 export interface NotificationPreferences {
@@ -630,6 +673,8 @@ export interface Users {
   is_demo: Generated<boolean>;
   locale: Generated<string>;
   status: Generated<string>;
+  upload_restricted_until: Timestamp | null;
+  upload_restriction_reason: string | null;
 }
 
 export interface VerificationRequests {
@@ -645,8 +690,38 @@ export interface VerificationRequests {
   user_id: string;
 }
 
+export interface VideoFrameHashes {
+  at_ms: number;
+  dhash: Int8;
+  mirrored: Generated<boolean>;
+  video_id: string;
+}
+
 export interface VideoHashtags {
   tag: string;
+  video_id: string;
+}
+
+export interface VideoModerationResults {
+  confidence: Numeric | null;
+  created_at: Generated<Timestamp>;
+  decision: string;
+  detected_categories: Generated<string[]>;
+  explanation: string | null;
+  football_relevance_score: Numeric | null;
+  frames_analyzed: Generated<number>;
+  id: string;
+  latency_ms: number | null;
+  model_version: string | null;
+  policy_version: string;
+  reason_codes: Generated<string[]>;
+  retry: Json | null;
+  review_required: Generated<boolean>;
+  safety_scores: Generated<Json>;
+  scan_kind: Generated<string>;
+  stages: Generated<string[]>;
+  suspicious_timestamps: Generated<Json>;
+  updated_at: Generated<Timestamp>;
   video_id: string;
 }
 
@@ -665,6 +740,7 @@ export interface Videos {
   football_present: boolean | null;
   height: number | null;
   id: string;
+  legal_hold: Generated<boolean>;
   max_duration_ms: number | null;
   moderation: string | null;
   original_key: string;
@@ -674,8 +750,12 @@ export interface Videos {
   players_visible: number | null;
   position: string | null;
   published_at: Timestamp | null;
+  quarantine_playback_key: string | null;
+  quarantine_thumbnail_key: string | null;
   region_id: string | null;
   rights_confirmed_at: Timestamp | null;
+  safety_checked_at: Timestamp | null;
+  safety_status: Generated<string>;
   sha256: Buffer | null;
   size_bytes: Int8;
   skill_key: string | null;
@@ -706,6 +786,7 @@ export interface VideoViews {
 }
 
 export interface DB {
+  account_strikes: AccountStrikes;
   age_records: AgeRecords;
   ai_calls: AiCalls;
   analytics_daily: AnalyticsDaily;
@@ -735,6 +816,8 @@ export interface DB {
   jobs: Jobs;
   jurisdiction_rules: JurisdictionRules;
   likes: Likes;
+  moderation_appeals: ModerationAppeals;
+  moderation_audit_logs: ModerationAuditLogs;
   moderation_cases: ModerationCases;
   notification_preferences: NotificationPreferences;
   notifications: Notifications;
@@ -765,7 +848,9 @@ export interface DB {
   user_roles: UserRoles;
   users: Users;
   verification_requests: VerificationRequests;
+  video_frame_hashes: VideoFrameHashes;
   video_hashtags: VideoHashtags;
+  video_moderation_results: VideoModerationResults;
   video_skills: VideoSkills;
   video_views: VideoViews;
   videos: Videos;
