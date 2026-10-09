@@ -4,6 +4,7 @@
 import { isMinor } from './age.js';
 import type { AgeBand } from './age.js';
 import { orgCan } from './orgs.js';
+import { canChallenge } from './play.js';
 import type { OrgAction, OrgRole } from './orgs.js';
 
 export type Role = 'player' | 'fan' | 'scout' | 'moderator' | 'admin';
@@ -38,6 +39,10 @@ export type Action =
   /** Buying a paid plan for `subjectId` (yourself, or a ward as their guardian). */
   | { kind: 'billing.purchase'; subjectId: string; subjectMinor: boolean }
   | { kind: 'social.engage' }
+  /** Playing the tactics game, drills and the XP that comes with them. */
+  | { kind: 'play.use' }
+  /** Starting a friend challenge against `opponent` (see canChallenge). */
+  | { kind: 'play.challenge'; opponentBand: AgeBand; mutualFollow: boolean; blocked: boolean; guardianPair: boolean }
   | { kind: 'report.create' }
   | { kind: 'consent.grant'; subjectId: string; purpose: ConsentPurpose }
   | { kind: 'admin.access' }
@@ -133,7 +138,11 @@ export function can(actor: Actor, action: Action): Decision {
 
     case 'social.engage':
     case 'report.create':
+    case 'play.use':
       return allow;
+
+    case 'play.challenge':
+      return canChallenge({ mutualFollow: action.mutualFollow, blocked: action.blocked, aBand: actor.ageBand, bBand: action.opponentBand, guardianPair: action.guardianPair });
 
     case 'consent.grant': {
       const subjectIsActor = action.subjectId === actor.userId;

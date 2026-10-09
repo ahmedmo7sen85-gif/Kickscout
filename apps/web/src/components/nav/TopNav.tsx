@@ -14,8 +14,8 @@ export function Logo() {
 }
 
 /**
- * Desktop: Home, Discover, Talent Radar, Challenges, Upload, then For Players, For Scouts,
- * Notifications, Profile. Phones get a compact bar; the bottom nav carries the main items.
+ * Desktop: Home, Discover, Talent Radar, Challenges, Play, Upload, then For Players, For Scouts,
+ * Notifications, Profile. Phones get a compact bar (with Play and Notifications); the bottom nav carries the main items.
  */
 export function TopNav() {
   const pathname = usePathname();
@@ -29,6 +29,7 @@ export function TopNav() {
     { href: '/discover', label: t.nav.discover },
     { href: '/radar', label: t.nav.radar },
     { href: '/challenges', label: t.nav.challenges },
+    { href: '/play', label: t.nav.play },
   ];
   const link = (href: string, label: string, extra = '') => {
     const active = isActive(pathname, href);
@@ -52,6 +53,11 @@ export function TopNav() {
         <ul className="top-nav__secondary">
           <li className="top-nav__desktop">{link('/for-players', t.nav.forPlayers)}</li>
           <li className="top-nav__desktop">{link('/for-scouts', t.nav.forScouts)}</li>
+          <li className="top-nav__mobile">
+            <Link href="/play" className={`top-nav__icon${isActive(pathname, '/play') ? ' is-active' : ''}`} aria-label={t.nav.play} title={t.nav.play}>
+              <Icon name="ball" />
+            </Link>
+          </li>
           <li>
             <Link href="/notifications" className={`top-nav__icon${isActive(pathname, '/notifications') ? ' is-active' : ''}`}
               aria-label={unread ? `${t.nav.notifications}, ${fmt(t.nav.unread, { n: unread })}` : t.nav.notifications} title={t.nav.notifications}>

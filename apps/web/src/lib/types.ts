@@ -162,3 +162,18 @@ export type EvaluatedFlags = z.infer<typeof C.EvaluatedFlags>;
 export type FeatureFlagView = z.infer<typeof C.FeatureFlagView>;
 export type SitemapView = z.infer<typeof C.SitemapView>;
 export type SeoProfileView = z.infer<typeof C.SeoProfileView>;
+
+// play: tactics game, drills, XP, friend challenges
+export type PitchPoint = z.infer<typeof C.PitchPoint>;
+export type PitchPlayer = z.infer<typeof C.PitchPlayer>;
+export type PlayArrow = z.infer<typeof C.PlayArrow>;
+export type PlayScenarioView = z.infer<typeof C.PlayScenarioView>;
+export type PlayAnswerFeedback = z.infer<typeof C.PlayAnswerFeedback>;
+export type PlayRoundView = z.infer<typeof C.PlayRoundView>;
+export type PlayProfile = z.infer<typeof C.PlayProfile>;
+export type PlayAnswerResponse = z.infer<typeof C.PlayAnswerResponse>;
+export type PlayXpAward = z.infer<typeof C.PlayXpAward>;
+export type PlayFriend = z.infer<typeof C.PlayFriend>;
+export type PlayFriendList = z.infer<typeof C.PlayFriendList>;
+export type PlayChallengeView = z.infer<typeof C.PlayChallengeView>;
+export type PlayChallengeList = z.infer<typeof C.PlayChallengeList>;

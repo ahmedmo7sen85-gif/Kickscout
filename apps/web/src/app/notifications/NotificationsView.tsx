@@ -18,8 +18,11 @@ import type { NotificationView } from '@/lib/types';
 const str = (v: unknown) => (typeof v === 'string' ? v : null);
 
 /** Notification payloads vary by kind; show the server's text when it sends one, otherwise the kind. */
-function describe(n: NotificationView, generic: string, savedSearchMatch: string): { text: string; href: string | null } {
+function describe(n: NotificationView, generic: string, savedSearchMatch: string, game?: { invite: string; result: string }): { text: string; href: string | null } {
   const p = n.payload;
+  if (game && (n.kind === 'challenge.game_invite' || n.kind === 'challenge.game_result')) {
+    return { text: n.kind === 'challenge.game_invite' ? game.invite : game.result, href: '/play/friends' };
+  }
   if (n.kind === 'saved_search.match') {
     const org = str(p.organizationId);
     return { text: savedSearchMatch.replace('{name}', str(p.name) ?? ''), href: org ? `/scout/pipeline?org=${encodeURIComponent(org)}` : '/scout/pipeline' };
@@ -66,7 +69,7 @@ function List() {
       {unread ? <div><Button size="sm" onClick={markAll} loading={busy}>{t.notifications.markAllRead}</Button></div> : null}
       <ul className="list">
         {n.data.items.map((x) => {
-          const d = describe(x, t.notifications.generic, t.notifications.savedSearchMatch);
+          const d = describe(x, t.notifications.generic, t.notifications.savedSearchMatch, { invite: t.notifications.gameInvite, result: t.notifications.gameResult });
           return (
             <li key={x.id} className={`notif${x.read ? '' : ' is-unread'}`}>
               <div className="list__row">

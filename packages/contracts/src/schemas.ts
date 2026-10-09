@@ -516,6 +516,12 @@ export const AccountExport = z.object({
     historyResetAt: z.iso.datetime().nullable(),
     notInterested: z.array(z.object({ kind: z.enum(['video', 'player', 'skill']), id: z.string(), at: z.iso.datetime() })),
   }).nullable().default(null),
+  /** Play: XP earned in the tactics game and training drills, one row per award. */
+  play: z.object({
+    xp: z.number().int(),
+    level: z.number().int(),
+    awards: z.array(z.object({ source: z.string(), ref: z.string(), xp: z.number().int(), at: z.iso.datetime() })),
+  }).nullable().default(null),
   scout: z.object({
     shortlists: z.array(z.object({ id: Id, name: z.string(), playerIds: z.array(Id), createdAt: z.iso.datetime() })),
     notes: z.array(z.object({ id: Id, playerId: Id, body: z.string(), createdAt: z.iso.datetime() })),
@@ -816,3 +822,84 @@ export const AiUsageView = z.object({
     inputTokens: z.number().int(), outputTokens: z.number().int(), avgLatencyMs: z.number().int(),
   })),
 });
+
+// ---------------------------------------------------------------- play: tactics game, drills, XP, friend challenges
+// XP counts practice in KICKSCOUT. It is never a rating of ability and never appears on a public
+// profile or to scouts. Pitch coordinates: x 0 (left touchline) to 100, y 0 (the goal you attack)
+// to 100 (your own goal).
+export const PitchPoint = z.object({ x: z.number().min(0).max(100), y: z.number().min(0).max(100) });
+export const PitchPlayer = PitchPoint.extend({ n: z.string().max(3).optional() });
+export const PlayArrow = z.object({ kind: z.enum(['pass', 'run', 'shot', 'dribble', 'clear', 'hold']), from: PitchPoint, to: PitchPoint });
+export const PlayTopic = z.enum(['passing', 'shooting', 'dribbling', 'defending', 'positioning', 'transition']);
+export const PlayScenarioView = z.object({
+  id: z.string(),
+  topic: PlayTopic,
+  prompt: Bilingual,
+  pitch: z.object({ you: PitchPlayer, ball: PitchPoint, teammates: z.array(PitchPlayer), opponents: z.array(PitchPlayer) }),
+  options: z.array(z.object({ id: z.string(), label: Bilingual, arrow: PlayArrow.nullable() })),
+});
+export const PlayAnswerFeedback = z.object({
+  scenarioId: z.string(),
+  chosenOptionId: z.string(),
+  points: z.number().int().min(0).max(2),
+  ms: z.number().int(),
+  xp: z.number().int(),
+  bestOptionId: z.string(),
+  options: z.array(z.object({ id: z.string(), points: z.number().int(), why: Bilingual })),
+  lesson: Bilingual,
+});
+export const PlayRoundView = z.object({
+  id: Id,
+  challengeId: Id.nullable(),
+  scenarios: z.array(PlayScenarioView),
+  answers: z.array(PlayAnswerFeedback),
+  points: z.number().int(),
+  maxPoints: z.number().int(),
+  xp: z.number().int(),
+  /** False when the daily XP allowance for rounds is used up: the round is practice only. */
+  earnsXp: z.boolean(),
+  completed: z.boolean(),
+});
+export const PlayLevelTier = z.enum(['grassroots', 'academy', 'reserves', 'first_team', 'captain', 'legend']);
+export const PlayProfile = z.object({
+  xp: z.number().int(),
+  level: z.number().int(),
+  tier: PlayLevelTier,
+  levelStartXp: z.number().int(),
+  nextLevelXp: z.number().int(),
+  streakDays: z.number().int(),
+  today: z.object({
+    xp: z.number().int(),
+    roundsLeft: z.number().int(),
+    scanRunsLeft: z.number().int(),
+    drillsDone: z.array(z.string()),
+  }),
+  totals: z.object({ rounds: z.number().int(), bestAnswers: z.number().int(), drills: z.number().int(), challengeWins: z.number().int() }),
+});
+export const PlayAnswerRequest = z.object({ scenarioId: z.string().min(1).max(40), optionId: z.string().min(1).max(8) });
+export const PlayAnswerResponse = z.object({ feedback: PlayAnswerFeedback, round: PlayRoundView, profile: PlayProfile });
+export const PlayStartRoundRequest = z.object({ challengeId: Id.optional() });
+export const PlayScanRequest = z.object({ hits: z.number().int().min(0).max(10), reps: z.literal(10) });
+export const PlayDrillRequest = z.object({ count: z.number().int().min(0).max(10_000).optional() });
+export const PlayXpAward = z.object({ xpAwarded: z.number().int(), capped: z.boolean(), profile: PlayProfile });
+export const PlayFriend = z.object({ userId: Id, handle: z.string(), displayName: z.string() });
+export const PlayFriendList = z.object({ items: z.array(PlayFriend) });
+export const PlayChallengeView = z.object({
+  id: Id,
+  status: z.enum(['pending', 'accepted', 'completed', 'declined', 'expired']),
+  role: z.enum(['challenger', 'opponent']),
+  other: PlayFriend,
+  /** My round in this challenge; null until I start it. */
+  myRoundId: Id.nullable(),
+  myPoints: z.number().int().nullable(),
+  myFinished: z.boolean(),
+  /** The other player's points, shown only once I have finished my own round. */
+  theirPoints: z.number().int().nullable(),
+  theyFinished: z.boolean(),
+  maxPoints: z.number().int(),
+  result: z.enum(['won', 'lost', 'draw']).nullable(),
+  createdAt: z.iso.datetime(),
+  expiresAt: z.iso.datetime(),
+});
+export const PlayChallengeList = z.object({ items: z.array(PlayChallengeView) });
+export const CreatePlayChallengeRequest = z.object({ opponentId: Id });

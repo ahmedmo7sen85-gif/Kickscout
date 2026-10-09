@@ -437,6 +437,49 @@ export interface Plans {
   updated_at: Generated<Timestamp>;
 }
 
+export interface PlayAnswers {
+  answered_at: Generated<Timestamp>;
+  ms: number;
+  option_id: string;
+  points: number;
+  round_id: string;
+  scenario_id: string;
+}
+
+export interface PlayChallenges {
+  challenger_id: string;
+  completed_at: Timestamp | null;
+  created_at: Generated<Timestamp>;
+  expires_at: Timestamp;
+  id: string;
+  opponent_id: string;
+  scenario_ids: string[];
+  status: Generated<string>;
+  winner_id: string | null;
+}
+
+export interface PlayRounds {
+  challenge_id: string | null;
+  completed_at: Timestamp | null;
+  id: string;
+  points: Generated<number>;
+  scenario_ids: string[];
+  started_at: Generated<Timestamp>;
+  total_ms: Generated<number>;
+  user_id: string;
+  xp: Generated<number>;
+}
+
+export interface PlayXp {
+  created_at: Generated<Timestamp>;
+  day: Generated<Timestamp>;
+  id: Generated<Int8>;
+  ref: string;
+  source: string;
+  user_id: string;
+  xp: number;
+}
+
 export interface PlayerProfiles {
   created_at: Generated<Timestamp>;
   height_cm: number | null;
@@ -744,6 +787,10 @@ export interface DB {
   outbox: Outbox;
   plan_prices: PlanPrices;
   plans: Plans;
+  play_answers: PlayAnswers;
+  play_challenges: PlayChallenges;
+  play_rounds: PlayRounds;
+  play_xp: PlayXp;
   player_profiles: PlayerProfiles;
   privacy_settings: PrivacySettings;
   profiles: Profiles;

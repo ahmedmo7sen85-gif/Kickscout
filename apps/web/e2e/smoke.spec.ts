@@ -80,7 +80,7 @@ test('mobile bottom nav has the five items at 390px', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await expect(nav).toBeHidden();
   const top = page.getByRole('navigation', { name: 'Main' });
-  for (const name of ['Home', 'Discover', 'Talent Radar', 'Challenges', 'Upload', 'For Players', 'For Scouts', 'Notifications', 'Profile']) {
+  for (const name of ['Home', 'Discover', 'Talent Radar', 'Challenges', 'Play', 'Upload', 'For Players', 'For Scouts', 'Notifications', 'Profile']) {
     await expect(top.getByRole('link', { name, exact: true })).toBeVisible();
   }
 });

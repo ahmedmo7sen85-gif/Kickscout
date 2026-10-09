@@ -1,6 +1,7 @@
 import type { SVGProps } from 'react';
 
 const PATHS = {
+  ball: 'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM12 7.6l3.3 2.4-1.3 3.9h-4L8.7 10zM12 3v4.6M15.3 10l5.2-1.6M14 13.9l3.1 4.4M10 13.9l-3.1 4.4M8.7 10 3.5 8.4',
   home: 'M3 10.5 12 3l9 7.5V21h-6v-6H9v6H3z',
   discover: 'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zm3.5 5.5-2 5-5 2 2-5z',
   plus: 'M12 5v14M5 12h14',
