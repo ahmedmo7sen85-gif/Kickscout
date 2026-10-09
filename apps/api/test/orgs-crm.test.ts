@@ -561,7 +561,7 @@ describe('saved-search alerts', () => {
     const fresh = await player('alert_fresh', 'LW');
     const c = await clipInReview(fresh.token);
     // As if the publish-time call had failed: publish directly.
-    await env.db.updateTable('videos').set({ status: 'published', moderation: 'safe', published_at: new Date() }).where('id', '=', c.videoId).execute();
+    await env.db.updateTable('videos').set({ status: 'published', safety_status: 'APPROVED', moderation: 'safe', published_at: new Date() }).where('id', '=', c.videoId).execute();
     const before = (await alerts(orgScout)).length;
     const report = await runSavedSearchAlerts(env.db, { now: new Date(Date.now() + 1000) });
     expect(report.notifications).toBeGreaterThanOrEqual(1);

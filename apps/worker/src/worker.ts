@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import type { Database } from '@fp/db';
 import { PermanentJobError } from './errors.js';
-import { markVideoFailed, processVideo } from './pipeline.js';
+import { markVideoFailed, processRescan, processVideo, publishVideo, unpublishVideo } from './pipeline.js';
 import type { Logger, PipelineDeps } from './pipeline.js';
 import { claimJob, completeJob, failJob, heartbeat, recoverStaleJobs } from './queue.js';
 import type { JobRow } from './queue.js';
@@ -14,6 +14,7 @@ export interface WorkerOptions {
 }
 
 const VideoJobPayload = z.object({ videoId: z.uuid() });
+const RescanJobPayload = z.object({ videoId: z.uuid(), kind: z.enum(['rescan', 'report', 'policy_update']).default('rescan') });
 
 interface JobHandler {
   run(job: JobRow): Promise<void>;
@@ -53,8 +54,32 @@ export class Worker {
         },
         onFailed: async (job, error) => {
           const parsed = VideoJobPayload.safeParse(job.payload);
-          if (parsed.success) await markVideoFailed(this.db, parsed.data.videoId, error);
+          if (parsed.success) await markVideoFailed(this.db, parsed.data.videoId, error, this.deps.policy?.version);
         },
+      },
+      // Guardian re-check of a stored video (reports, policy or model updates, reviewer request).
+      'video.rescan': {
+        run: async (job) => {
+          const parsed = RescanJobPayload.safeParse(job.payload);
+          if (!parsed.success) throw new PermanentJobError(`invalid ${job.kind} payload`);
+          await processRescan(this.deps, parsed.data.videoId, parsed.data.kind);
+        },
+        // A failed re-scan changes nothing: the video keeps its last decision, and staff see the failed job.
+        onFailed: async () => {},
+      },
+      // A reviewer approved the video: copy its private files to public delivery.
+      'video.publish': {
+        run: async (job) => {
+          await publishVideo(this.deps, parsePayload(job).videoId);
+        },
+        onFailed: async () => {},
+      },
+      // The video left public view: remove its public files.
+      'video.unpublish': {
+        run: async (job) => {
+          await unpublishVideo(this.deps, parsePayload(job).videoId);
+        },
+        onFailed: async () => {},
       },
     };
   }

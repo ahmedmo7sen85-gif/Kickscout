@@ -15,7 +15,7 @@ import { normalizeHashtag, SKILL_KEYS } from '@/lib/constants';
 import { errorMessage } from '@/lib/errors';
 import { useI18n } from '@/lib/i18n/provider';
 import { useApi } from '@/lib/useApi';
-import type { AiUsageView, ModerationCaseView, ModerationDecisionRequest, SkillKey } from '@/lib/types';
+import type { AiUsageView, GuardianCaseDetails, ModerationCaseView, ModerationDecisionRequest, SkillKey } from '@/lib/types';
 
 /** Upheld claims on this many distinct videos flag the owner as a repeat infringer (a prompt for review, not an automatic ban). */
 const REPEAT_INFRINGER_STRIKES = 3;
@@ -40,6 +40,7 @@ function Gate() {
       <p><Link href="/admin/metrics" className="link">{t.admin.metricsLink}</Link></p>
       <Stats />
       <Moderation />
+      <GuardianMetrics />
       <AiUsage />
       <Verifications />
       <CreateChallenge />
@@ -113,13 +114,22 @@ function Moderation() {
   const cases = useApi((s) => api.moderationCases({ status }, s), [status]);
   const [notes, setNotes] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState<string | null>(null);
-  const decide = async (c: ModerationCaseView, decision: ModerationDecisionRequest['decision']) => {
+  const decide = async (c: ModerationCaseView, decision: ModerationDecisionRequest['decision'], extra: { days?: number } = {}) => {
     setBusy(c.id);
     try {
-      await api.decideCase(c.id, { decision, note: notes[c.id]?.trim() || undefined });
-      cases.setData((d) => ({ items: d.items.filter((x) => x.id !== c.id) }));
+      await api.decideCase(c.id, { decision, note: notes[c.id]?.trim() || undefined, ...extra });
+      // These keep the case open (escalate_safety moves it to admins only, so it is reloaded).
+      if (decision === 'assign' || decision === 'request_review' || decision === 'restrict_uploads' || decision === 'escalate' || decision === 'escalate_safety') cases.retry();
+      else cases.setData((d) => ({ items: d.items.filter((x) => x.id !== c.id) }));
       toast.show(t.admin.decided, { tone: 'success' });
     } catch (e) { toast.show(errorMessage(e, t), { tone: 'error' }); } finally { setBusy(null); }
+  };
+  const preview = async (c: ModerationCaseView) => {
+    try {
+      const p = await api.casePreview(c.id);
+      if (p.playbackUrl) window.open(p.playbackUrl, '_blank', 'noopener,noreferrer');
+      toast.show(t.guardianCheck.previewExpires);
+    } catch (e) { toast.show(errorMessage(e, t), { tone: 'error' }); }
   };
   return (
     <Section title={t.admin.moderation} id="a-mod">
@@ -138,9 +148,13 @@ function Moderation() {
                 <span className="badge badge--neutral">{fmt(t.admin.source, { source: c.source })}</span>
                 <span className="badge badge--warn">{fmt(t.admin.priority, { n: c.priority })}</span>
                 <span className="muted small">{fmt(t.admin.reports, { n: c.reportCount })}</span>
+                {c.restricted ? <span className="badge badge--warn" data-testid="restricted">{t.guardianCheck.restricted}</span> : null}
+                {c.assignedReviewer ? <span className="badge badge--outline">{t.guardianCheck.assigned}</span> : null}
                 {c.aiModel ? <span className="badge badge--outline mono" data-testid="ai-model">{fmt(t.aiAdmin.model, { model: c.aiModel })}</span> : null}
               </div>
               {c.categories.length ? <p className="small">{c.categories.join(', ')}</p> : null}
+              {c.reason ? <p className="small muted mono">{c.reason}</p> : null}
+              {c.guardian ? <GuardianPanel g={c.guardian} /> : null}
               {c.video ? (
                 <div className="row" style={{ alignItems: 'flex-start' }}>
                   {c.video.thumbnailUrl ? <img src={c.video.thumbnailUrl} alt="" width={72} style={{ aspectRatio: '9 / 16', objectFit: 'cover', borderRadius: 8 }} /> : null}
@@ -194,11 +208,92 @@ function Moderation() {
                     <Button size="sm" variant="danger" disabled={busy === c.id} onClick={() => decide(c, 'remove')}>{t.admin.remove}</Button>
                     <Button size="sm" variant="ghost" disabled={busy === c.id} onClick={() => decide(c, 'dismiss')}>{t.admin.dismiss}</Button>
                   </div>
+                  {c.targetKind === 'video' ? (
+                    <div className="row" data-testid="guardian-actions">
+                      {!c.guardian?.legalHold ? <Button size="sm" variant="ghost" disabled={busy === c.id} onClick={() => preview(c)}>{t.guardianCheck.preview}</Button> : null}
+                      <Button size="sm" variant="ghost" disabled={busy === c.id} onClick={() => decide(c, 'assign')}>{t.guardianCheck.assign}</Button>
+                      <Button size="sm" variant="ghost" disabled={busy === c.id} onClick={() => decide(c, 'request_review')}>{t.guardianCheck.requestReview}</Button>
+                      <Button size="sm" variant="ghost" disabled={busy === c.id} onClick={() => decide(c, 'restrict_uploads', { days: 7 })}>{t.guardianCheck.restrictUploads}</Button>
+                      {!c.restricted ? <Button size="sm" variant="danger" disabled={busy === c.id} onClick={() => decide(c, 'escalate_safety')}>{t.guardianCheck.escalateSafety}</Button> : null}
+                    </div>
+                  ) : null}
                 </>
               ) : <p className="small">{c.decision}</p>}
             </li>
           ))}
         </ul>
+      ) : null}
+    </Section>
+  );
+}
+
+/** What the Guardian found, and the history a reviewer needs. Probabilities describe the clip, never the player. */
+function GuardianPanel({ g }: { g: GuardianCaseDetails }) {
+  const { t, fmt, formatDate, formatNumber } = useI18n();
+  const scan = g.scans[0];
+  const pct = (n: number | null) => (n === null ? '—' : `${Math.round(n * 100)}%`);
+  return (
+    <details className="small" open data-testid="guardian-panel">
+      <summary>{t.guardianCheck.title} · {t.guardianCheck.status[g.safetyStatus]}</summary>
+      {g.legalHold ? <p className="notice notice--warn">{t.guardianCheck.legalHold}</p> : null}
+      {scan ? (
+        <div className="stack stack--tight">
+          <p><strong>{fmt(t.guardianCheck.decision, { decision: scan.decision })}</strong> · {fmt(t.guardianCheck.football, { value: pct(scan.footballRelevance) })} · {fmt(t.guardianCheck.confidence, { value: pct(scan.confidence) })}</p>
+          {scan.reasonCodes.length ? <p><span className="muted">{t.guardianCheck.reasons}:</span> <span className="mono">{scan.reasonCodes.join(', ')}</span></p> : null}
+          {Object.keys(scan.categoryProbabilities).length ? (
+            <p><span className="muted">{t.guardianCheck.categories}:</span> {Object.entries(scan.categoryProbabilities).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${k} ${pct(v)}`).join(', ')}</p>
+          ) : null}
+          {scan.suspiciousTimestamps.length ? (
+            <p><span className="muted">{t.guardianCheck.moments}:</span> {scan.suspiciousTimestamps.map((m) => `${(m.atMs / 1000).toFixed(1)} s (${m.categories.join(', ')})`).join('; ')}</p>
+          ) : null}
+          {scan.explanation ? <p className="muted" dir="auto">{scan.explanation}</p> : null}
+          <p className="muted">{fmt(t.guardianCheck.frames, { n: formatNumber(scan.framesAnalyzed), stages: scan.stages.join(' → ') })}</p>
+          <p className="muted mono">{fmt(t.guardianCheck.model, { model: scan.modelVersion ?? '—', policy: scan.policyVersion })}</p>
+        </div>
+      ) : null}
+      <p>{fmt(t.guardianCheck.ownerStrikes, { n: g.owner.activeStrikes.length })}
+        {g.owner.activeStrikes.length ? ` (${g.owner.activeStrikes.map((s) => `${s.category}/${s.severity}`).join(', ')})` : ''}
+        {g.owner.uploadRestrictedUntil ? <> · {fmt(t.guardianCheck.uploadsPausedUntil, { date: formatDate(g.owner.uploadRestrictedUntil) })}</> : null}</p>
+      {g.reports.length ? (
+        <details><summary>{fmt(t.guardianCheck.reportsTitle, { n: g.reports.length })}</summary>
+          <ul className="list">{g.reports.map((r, i) => <li key={i}><span className="badge badge--outline">{r.reason}</span> <span dir="auto">{r.details ?? ''}</span> <span className="muted">{formatDate(r.createdAt)}</span></li>)}</ul>
+        </details>
+      ) : null}
+      {g.previousDecisions.length ? (
+        <details><summary>{t.guardianCheck.previousDecisions}</summary>
+          <ul className="list">{g.previousDecisions.map((d, i) => <li key={i}>{d.decision} {d.note ? <span className="muted" dir="auto">· {d.note}</span> : null} {d.decidedAt ? <span className="muted">· {formatDate(d.decidedAt)}</span> : null}</li>)}</ul>
+        </details>
+      ) : null}
+      {g.appeal ? (
+        <div className="card card--outline"><strong>{t.guardianCheck.appeal}</strong> <span className="badge badge--neutral">{g.appeal.status}</span>
+          <p dir="auto" style={{ whiteSpace: 'pre-wrap', margin: 0 }}>{g.appeal.explanation}</p></div>
+      ) : null}
+    </details>
+  );
+}
+
+function GuardianMetrics() {
+  const { t, fmt, formatNumber } = useI18n();
+  const days = 30;
+  const m = useApi((s) => api.guardianMetrics({ days }, s), []);
+  const pct = (n: number | null) => (n === null ? t.guardianCheck.notEnough : `${Math.round(n * 1000) / 10}%`);
+  return (
+    <Section title={t.guardianCheck.metricsTitle} id="a-guardian">
+      <p className="muted small" role="note">{fmt(t.guardianCheck.metricsNote, { days })}</p>
+      {m.status === 'loading' ? <SkeletonList rows={2} label={t.common.loading} /> : null}
+      {m.status === 'error' ? <ErrorState error={m.error} onRetry={m.retry} /> : null}
+      {m.status === 'success' ? (
+        <div className="stat-grid" data-testid="guardian-metrics">
+          <div className="stat"><strong>{formatNumber(m.data.uploadsScanned)}</strong><span>{t.guardianCheck.uploadsScanned}</span></div>
+          <div className="stat"><strong>{pct(m.data.humanReviewRate)}</strong><span>{t.guardianCheck.humanReviewRate}</span></div>
+          <div className="stat"><strong>{pct(m.data.scanFailureRate)}</strong><span>{t.guardianCheck.scanFailureRate}</span></div>
+          <div className="stat"><strong>{m.data.averageLatencyMs === null ? '—' : formatNumber(m.data.averageLatencyMs)}</strong><span>{t.guardianCheck.avgLatency}</span></div>
+          <div className="stat"><strong>{m.data.averageCostUsd === null ? '—' : m.data.averageCostUsd.toFixed(4)}</strong><span>{t.guardianCheck.avgCost}</span></div>
+          <div className="stat"><strong>{pct(m.data.appealReversalRate)}</strong><span>{t.guardianCheck.appealReversal}</span></div>
+          <div className="stat"><strong>{pct(m.data.estimatedPrecision)}</strong><span>{t.guardianCheck.precision}</span></div>
+          <div className="stat"><strong>{formatNumber(m.data.automaticReversed.approvalsRemoved)}</strong><span>{t.guardianCheck.approvalsRemoved}</span></div>
+          <div className="stat"><strong>{formatNumber(m.data.automaticReversed.rejectionsOverturned)}</strong><span>{t.guardianCheck.rejectionsOverturned}</span></div>
+        </div>
       ) : null}
     </Section>
   );

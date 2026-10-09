@@ -14,7 +14,7 @@ export async function emit(tx: Transaction<DB>, topic: string, payload: Record<s
 /** Append-only audit trail for consent, safety, admin and data-access actions. */
 export async function audit(
   tx: Transaction<DB>,
-  entry: { actorId: string | null; action: string; targetKind?: string; targetId?: string; metadata?: Record<string, unknown> },
+  entry: { actorId: string | null; action: string; targetKind?: string; targetId?: string; caseId?: string | null; metadata?: Record<string, unknown> },
 ) {
   await tx
     .insertInto('audit_logs')
@@ -23,6 +23,7 @@ export async function audit(
       action: entry.action,
       target_kind: entry.targetKind ?? null,
       target_id: entry.targetId ?? null,
+      case_id: entry.caseId ?? null,
       metadata: JSON.stringify(entry.metadata ?? {}),
     })
     .execute();

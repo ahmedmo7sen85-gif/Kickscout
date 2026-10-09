@@ -1,5 +1,5 @@
 import { HeadObjectCommand, S3Client, NotFound } from '@aws-sdk/client-s3';
-import { PutObjectCommand } from '@aws-sdk/client-s3';
+import { GetObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
 export interface PresignedPut {
@@ -11,6 +11,11 @@ export interface PresignedPut {
 export interface ObjectStorage {
   presignPut(key: string, contentType: string, sizeBytes: number, ttlSeconds?: number): Promise<PresignedPut>;
   head(key: string): Promise<{ sizeBytes: number; contentType: string | null } | null>;
+  /**
+   * A short-lived signed URL to read a private object (a quarantined copy waiting for review). Never
+   * cached, never public; the default lifetime is five minutes.
+   */
+  presignGet(key: string, ttlSeconds?: number): Promise<{ url: string; expiresAt: Date }>;
 }
 
 export class S3Storage implements ObjectStorage {
@@ -33,6 +38,12 @@ export class S3Storage implements ObjectStorage {
     const cmd = new PutObjectCommand({ Bucket: this.bucket, Key: key, ContentType: contentType, ContentLength: sizeBytes });
     const url = await getSignedUrl(this.client, cmd, { expiresIn: ttlSeconds, signableHeaders: new Set(['content-type', 'content-length']) });
     return { url, headers: { 'content-type': contentType }, expiresAt: new Date(Date.now() + ttlSeconds * 1000) };
+  }
+
+  async presignGet(key: string, ttlSeconds = 300) {
+    const cmd = new GetObjectCommand({ Bucket: this.bucket, Key: key, ResponseCacheControl: 'private, no-store' });
+    const url = await getSignedUrl(this.client, cmd, { expiresIn: ttlSeconds });
+    return { url, expiresAt: new Date(Date.now() + ttlSeconds * 1000) };
   }
 
   async head(key: string) {

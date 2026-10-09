@@ -8,7 +8,7 @@ import { API_VERSION } from '../platform/version.js';
 import { discoverablePlayers } from './catalog.js';
 
 /** The newest migration this build needs; /v1/ready reports `pending` until it is applied. */
-export const REQUIRED_MIGRATION = '0008_analytics_flags.sql';
+export const REQUIRED_MIGRATION = '0012_guardian.sql';
 
 const SITEMAP_PROFILES = 5000;
 const SITEMAP_VIDEOS = 20000;

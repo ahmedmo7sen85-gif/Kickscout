@@ -5,3 +5,4 @@ export * from './router.js';
 export * from './claude.js';
 export * from './fake.js';
 export * from './recorder.js';
+export * from './pricing.js';

@@ -5,11 +5,14 @@ import type { AiEffort, AiTask } from './types.js';
 /**
  * Model routing. Heavy work (looking at video frames to tag skills and moderate) goes to the strong
  * model; light work (turning a scout's sentence into search filters) goes to the fast, cheap one.
+ * Screening (the Guardian's first look at every frame sampled across a whole clip) is its own tier:
+ * a cheap model with room for many images and a per-frame answer.
  */
-export type AiTier = 'heavy' | 'light';
+export type AiTier = 'heavy' | 'light' | 'screen';
 
 export const TASK_TIER: Record<AiTask, AiTier> = {
   video_analysis: 'heavy',
+  video_screening: 'screen',
   nl_scout_query: 'light',
 };
 
@@ -30,6 +33,7 @@ export type RoutingTable = Record<AiTask, RouteConfig>;
 
 export const DEFAULT_HEAVY_MODEL = 'claude-opus-5-5';
 export const DEFAULT_LIGHT_MODEL = 'claude-haiku-5-5';
+export const DEFAULT_SCREEN_MODEL = 'claude-haiku-5-5';
 
 const unset = (v: unknown) => (typeof v === 'string' && v.trim() === '' ? undefined : v);
 const str = (d: string) => z.preprocess(unset, z.string().min(1).default(d));
@@ -57,6 +61,12 @@ const RoutingEnv = z.object({
   AI_MAX_ATTEMPTS_LIGHT: int(2, 1, 6),
   // Server-side refusal fallbacks are not available on every light model (Haiku has none): off by default.
   AI_SERVER_FALLBACKS_LIGHT: bool(false),
+  AI_MODEL_SCREEN: str(DEFAULT_SCREEN_MODEL),
+  AI_EFFORT_SCREEN: effort('low'),
+  AI_MAX_TOKENS_SCREEN: int(12_000, 1_024, 64_000),
+  AI_TIMEOUT_MS_SCREEN: int(2 * 60_000, 1_000, 10 * 60_000),
+  AI_MAX_ATTEMPTS_SCREEN: int(3, 1, 6),
+  AI_SERVER_FALLBACKS_SCREEN: bool(false),
 });
 
 export function routingFromEnv(env: NodeJS.ProcessEnv | Record<string, string | undefined> = process.env): RoutingTable {
@@ -81,6 +91,14 @@ export function routingFromEnv(env: NodeJS.ProcessEnv | Record<string, string | 
       timeoutMs: e.AI_TIMEOUT_MS_LIGHT,
       maxAttempts: e.AI_MAX_ATTEMPTS_LIGHT,
       serverFallbacks: e.AI_SERVER_FALLBACKS_LIGHT,
+    },
+    screen: {
+      model: e.AI_MODEL_SCREEN,
+      effort: e.AI_EFFORT_SCREEN,
+      maxTokens: e.AI_MAX_TOKENS_SCREEN,
+      timeoutMs: e.AI_TIMEOUT_MS_SCREEN,
+      maxAttempts: e.AI_MAX_ATTEMPTS_SCREEN,
+      serverFallbacks: e.AI_SERVER_FALLBACKS_SCREEN,
     },
   };
   return Object.fromEntries(Object.entries(TASK_TIER).map(([task, tier]) => [task, { tier, ...tiers[tier] }])) as RoutingTable;

@@ -57,7 +57,7 @@ export async function seed(databaseUrl: string, dobKey: Buffer, mediaPrefix = 'p
       const title = stem.slice(3).split('_').map((w) => w[0]!.toUpperCase() + w.slice(1)).join(' ');
       const at = new Date(now - (19 - i) * 3600_000);
       await tx.insertInto('videos').values({
-        id, owner_user_id: owner, status: 'published', original_key: `demo/${stem}.mp4`, declared_type: 'video/mp4', size_bytes: 1,
+        id, owner_user_id: owner, status: 'published', safety_status: 'APPROVED', original_key: `demo/${stem}.mp4`, declared_type: 'video/mp4', size_bytes: 1,
         title: `${title} (AI-generated demo)`, description: 'AI-generated promotional clip used as demo content.', skill_key: skill,
         context: 'skill', visibility: 'public', duration_ms: 5000, width: 704, height: 1280,
         playback_key: `${mediaPrefix}/${stem}.mp4`, thumbnail_key: `${mediaPrefix}/${stem}.jpg`, moderation: 'safe', created_at: at, published_at: at,

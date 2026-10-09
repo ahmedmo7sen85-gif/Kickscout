@@ -28,6 +28,11 @@ export class MemoryStorage implements ObjectStorage {
   async head(key: string) {
     return this.objects.get(key) ?? null;
   }
+  readonly signedReads: string[] = [];
+  async presignGet(key: string, ttlSeconds = 300) {
+    this.signedReads.push(key);
+    return { url: `https://storage.test/${key}?signed=1`, expiresAt: new Date(Date.now() + ttlSeconds * 1000) };
+  }
 }
 
 export class RecordingMailer implements Mailer {

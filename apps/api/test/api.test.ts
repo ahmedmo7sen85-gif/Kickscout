@@ -61,7 +61,7 @@ async function uploadedVideo(token: string, extra: Json = {}) {
 /** Stands in for the worker (tested in apps/worker): transcoded, AI-tagged, moderated. */
 async function workerFinishes(videoId: string, outcome: 'published' | 'review_required', aiTags: [string, number][] = [['elastico', 0.82], ['dribbling', 0.64]]) {
   await env.db.updateTable('videos').set({
-    status: outcome, moderation: outcome === 'published' ? 'safe' : 'flagged', playback_key: `playback/${videoId}.mp4`,
+    status: outcome, safety_status: outcome === 'published' ? 'APPROVED' : 'HUMAN_REVIEW', moderation: outcome === 'published' ? 'safe' : 'flagged', playback_key: `playback/${videoId}.mp4`,
     thumbnail_key: `thumbs/${videoId}.jpg`, duration_ms: 12000, published_at: outcome === 'published' ? new Date() : null,
   }).where('id', '=', videoId).execute();
   for (const [skill, confidence] of aiTags) {

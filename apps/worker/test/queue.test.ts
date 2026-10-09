@@ -3,7 +3,8 @@ import { sql } from 'kysely';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { createDb } from '@fp/db';
 import { backoffMs, claimJob, enqueue, recoverStaleJobs } from '../src/queue.js';
-import { FakeAnalyzer, SAFE, createEnv, createTestDb, getJob, getVideo, makeClips, notificationsFor, seedUser, seedVideo } from './helpers.js';
+import { FakeAiProvider } from '@fp/ai';
+import { createEnv, createTestDb, getJob, getVideo, makeClips, notificationsFor, scriptedAi, scriptedProvider, seedUser, seedVideo } from './helpers.js';
 import type { Clips, Env, TestDb } from './helpers.js';
 
 let tdb: TestDb;
@@ -72,13 +73,13 @@ describe('job queue', () => {
     expect(backoffMs(30, 1000)).toBe(3_600_000);
   });
 
-  it('retries a throwing analyzer with backoff, then fails the video and notifies the owner', async () => {
+  it('retries a failing AI provider with backoff, then holds the video as SCAN_FAILED for review and notifies the owner', async () => {
     const owner = await seedUser(tdb.db);
     const { videoId, jobId } = await seedVideo(env, { owner, clip: clips.valid }, 3);
-    const analyzer = new FakeAnalyzer(() => {
+    const provider = new FakeAiProvider(() => {
       throw new Error('AI service overloaded');
     });
-    const worker = env.worker(analyzer, { retryBaseMs: 1_000 });
+    const worker = env.worker(scriptedAi(tdb.db, {}, provider).classifiers, { retryBaseMs: 1_000 });
     const delays: number[] = [];
 
     for (let attempt = 1; attempt <= 3; attempt++) {
@@ -98,17 +99,18 @@ describe('job queue', () => {
         expect(job.finished_at).toBeInstanceOf(Date);
       }
     }
-    expect(analyzer.calls).toHaveLength(3);
+    expect(provider.requests).toHaveLength(9); // three jobs, each with the router's own three attempts
     // ~1 s after the first failure, ~2 s after the second
     expect(delays[0]).toBeGreaterThan(500);
     expect(delays[0]).toBeLessThanOrEqual(1_000);
     expect(delays[1]).toBeGreaterThan(1_500);
     expect(delays[1]).toBeLessThanOrEqual(2_000);
 
+    // a failed scan is never an approval; the private copy lets a moderator decide
     const v = await getVideo(tdb.db, videoId);
-    expect(v.status).toBe('failed');
-    expect(v.status_reason).toMatch(/could not process/);
-    expect((await notificationsFor(tdb.db, owner)).map((n) => n.kind)).toEqual(['video.failed']);
+    expect(v).toMatchObject({ status: 'review_required', safety_status: 'SCAN_FAILED', published_at: null });
+    expect(v.status_reason).toMatch(/waiting for a moderator/);
+    expect((await notificationsFor(tdb.db, owner)).map((n) => n.kind)).toEqual(['video.review_required']);
   });
 
   it('fails a job at once on a permanent error (missing original)', async () => {
@@ -116,11 +118,11 @@ describe('job queue', () => {
     const { videoId, jobId } = await seedVideo(env, { owner, clip: clips.valid });
     const v = await getVideo(tdb.db, videoId);
     await rm(env.storage.originalPath(v.original_key));
-    await env.worker(FakeAnalyzer.returning(SAFE)).runOnce();
+    await env.worker(scriptedAi(tdb.db).classifiers).runOnce();
     const job = await getJob(tdb.db, jobId);
     expect(job).toMatchObject({ status: 'failed', attempts: 1 });
     expect(job.last_error).toMatch(/not found/);
-    expect((await getVideo(tdb.db, videoId)).status).toBe('failed');
+    expect(await getVideo(tdb.db, videoId)).toMatchObject({ status: 'failed', safety_status: 'SCAN_FAILED' });
   });
 
   it('re-queues jobs stuck in running past the timeout, and fails those out of attempts', async () => {
@@ -131,7 +133,7 @@ describe('job queue', () => {
     await tdb.db.updateTable('jobs').set({ status: 'running', attempts: 1, locked_at: sql`now() - interval '20 minutes'` }).where('id', 'in', [stuck.jobId, exhausted.jobId]).execute();
     await tdb.db.updateTable('jobs').set({ status: 'running', attempts: 1, locked_at: sql`now() - interval '1 minute'` }).where('id', '=', fresh).execute();
 
-    const worker = env.worker(FakeAnalyzer.returning(SAFE), { jobTimeoutMs: 15 * 60_000 });
+    const worker = env.worker(scriptedAi(tdb.db).classifiers, { jobTimeoutMs: 15 * 60_000 });
     await worker.recoverStale();
 
     expect(await getJob(tdb.db, stuck.jobId)).toMatchObject({ status: 'queued', locked_at: null });
@@ -158,12 +160,13 @@ describe('job queue', () => {
     let release!: () => void;
     const gate = new Promise<void>((r) => (release = r));
     let started = 0;
-    const analyzer = new FakeAnalyzer(async () => {
+    const inner = scriptedProvider();
+    const provider = new FakeAiProvider(async (req, _call, signal) => {
       started++;
       await gate;
-      return { kind: 'result', analysis: SAFE, model: 'fake-model' };
+      return inner.complete(req, { signal });
     });
-    const worker = env.worker(analyzer, { concurrency: 3, pollIntervalMs: 20 });
+    const worker = env.worker(scriptedAi(tdb.db, {}, provider).classifiers, { concurrency: 3, pollIntervalMs: 20 });
     worker.start();
     while (started < 3) await new Promise((r) => setTimeout(r, 25));
     const stopping = worker.stop();

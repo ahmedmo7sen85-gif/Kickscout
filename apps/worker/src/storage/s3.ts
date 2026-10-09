@@ -30,11 +30,16 @@ export class S3VideoStorage implements VideoStorage {
   }
 
   async downloadOriginal(key: string, destPath: string, maxBytes: number) {
+    return this.downloadObject('originals', key, destPath, maxBytes);
+  }
+
+  async downloadObject(area: 'originals' | 'delivery', key: string, destPath: string, maxBytes: number) {
+    const Bucket = area === 'originals' ? this.opts.originalsBucket : this.opts.deliveryBucket;
     let res;
     try {
-      res = await this.client.send(new GetObjectCommand({ Bucket: this.opts.originalsBucket, Key: key }));
+      res = await this.client.send(new GetObjectCommand({ Bucket, Key: key }));
     } catch (err) {
-      if (err instanceof NoSuchKey) throw new PermanentJobError(`original ${key} not found in storage`);
+      if (err instanceof NoSuchKey) throw new PermanentJobError(`${area} object ${key} not found in storage`);
       throw err;
     }
     if (res.ContentLength !== undefined && res.ContentLength > maxBytes) {
@@ -61,7 +66,22 @@ export class S3VideoStorage implements VideoStorage {
         Body: createReadStream(srcPath),
         ContentLength: size,
         ContentType: contentType,
-        CacheControl: 'public, max-age=3600',
+        // Short CDN cache: a removed video stops being served within minutes of its files being deleted.
+        CacheControl: 'public, max-age=300',
+      }),
+    );
+  }
+
+  async uploadPrivate(key: string, srcPath: string, contentType: string) {
+    const { size } = await stat(srcPath);
+    await this.client.send(
+      new PutObjectCommand({
+        Bucket: this.opts.originalsBucket,
+        Key: key,
+        Body: createReadStream(srcPath),
+        ContentLength: size,
+        ContentType: contentType,
+        CacheControl: 'private, no-store',
       }),
     );
   }

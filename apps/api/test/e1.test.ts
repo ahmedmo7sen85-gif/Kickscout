@@ -53,7 +53,7 @@ const eventsOf = (userId: string) => env.db.selectFrom('analytics_events').selec
 async function clip(ownerId: string, extra: Json = {}) {
   const id = randomUUID();
   await env.db.insertInto('videos').values({
-    id, owner_user_id: ownerId, status: 'published', original_key: `originals/${ownerId}/${id}.mp4`, declared_type: 'video/mp4', size_bytes: 1000,
+    id, owner_user_id: ownerId, status: 'published', safety_status: 'APPROVED', original_key: `originals/${ownerId}/${id}.mp4`, declared_type: 'video/mp4', size_bytes: 1000,
     title: 'Clip', visibility: 'public', playback_key: `playback/${id}.mp4`, thumbnail_key: `thumbs/${id}.jpg`, published_at: new Date(), moderation: 'safe', ...extra,
   }).execute();
   return id;

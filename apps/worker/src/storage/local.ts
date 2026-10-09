@@ -30,6 +30,21 @@ export class LocalVideoStorage implements VideoStorage {
     await copyFile(srcPath, dest);
   }
 
+  async uploadPrivate(key: string, srcPath: string) {
+    const dest = this.originalPath(key);
+    await mkdir(path.dirname(dest), { recursive: true });
+    await copyFile(srcPath, dest);
+  }
+
+  async downloadObject(area: 'originals' | 'delivery', key: string, destPath: string, maxBytes: number) {
+    const src = this.safe(area, key);
+    const info = await stat(src).catch(() => null);
+    if (!info) throw new PermanentJobError(`${area} object ${key} not found in storage`);
+    if (info.size > maxBytes) throw new PermanentJobError(`object exceeds the ${maxBytes} byte limit`);
+    await copyFile(src, destPath);
+    return { sizeBytes: info.size };
+  }
+
   async deleteObjects(area: 'originals' | 'delivery', keys: string[]) {
     for (const key of keys) await rm(this.safe(area, key), { force: true });
   }

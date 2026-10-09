@@ -6,6 +6,7 @@ import { ApiError, notFound } from '../platform/errors.js';
 import { newId } from '../platform/ids.js';
 import { audit, emit, notify } from '../platform/events.js';
 import { openCase } from './moderation.js';
+import { onVideoReported } from './guardian.js';
 import { moderateComment } from '../platform/moderation.js';
 import { ageBandOf } from '../platform/actor.js';
 import { blockedEitherWay, pageOfVideos, videoQuery, visibleVideo } from './media.js';
@@ -179,6 +180,8 @@ export const socialRoutes = [
         await tx.insertInto('reports').values({ id, reporter_id: ctx.me().userId, target_kind: targetKind, target_id: targetId, reason, details: details ?? null, priority }).execute();
         // Reports about the same target share one open case, which climbs the queue as reports arrive.
         await openCase(tx, { targetKind, targetId, source: 'report', categories: [reason], priority, reports: 1 });
+        // Guardian: a fresh scan, and serious or repeated reports take a public video down until a person decides.
+        if (targetKind === 'video') await onVideoReported(tx, targetId, reason, ctx.deps.now());
         await audit(tx, { actorId: ctx.me().userId, action: 'report.created', targetKind, targetId, metadata: { reason, priority } });
         await emit(tx, 'report.created', { reportId: id, priority });
       });
