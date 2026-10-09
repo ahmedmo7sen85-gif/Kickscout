@@ -9,7 +9,8 @@ import { isActive } from './links';
 import { LocaleSwitch } from './LocaleSwitch';
 
 export function Logo() {
-  return <Link href="/" className="logo" aria-label="KICKSCOUT home">KICK<b>SCOUT</b></Link>;
+  const { t } = useI18n();
+  return <Link href="/" className="logo" aria-label={t.nav.homeLabel}>KICK<b>SCOUT</b></Link>;
 }
 
 /**

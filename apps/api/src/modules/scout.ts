@@ -19,6 +19,8 @@ import { organizationVerificationTarget } from './orgs.js';
 import { consumeScoutSearch, entitlementsFor, shortlistSlotsUsed } from '../platform/entitlements.js';
 
 const Uuid = z.uuid();
+/** Scout-search filters whose use (not value) is recorded in the scout_search analytics event. */
+const SCOUT_FILTER_KEYS = ['q', 'country', 'position', 'foot', 'skill', 'ageGroup', 'verifiedOnly', 'minFollowers'] as const;
 
 async function ownShortlist(deps: Deps, ownerId: string, id: string | undefined) {
   const parsed = Uuid.safeParse(id);
@@ -75,6 +77,9 @@ export const scoutRoutes = [
       const page = rows.slice(0, f.limit);
       const last = page.at(-1);
       await ctx.deps.db.transaction().execute((tx) => audit(tx, { actorId: ctx.me().userId, action: 'scout.search', metadata: { filters: { ...f, cursor: undefined } } }));
+      // Which filters were used, never their values.
+      const used = SCOUT_FILTER_KEYS.filter((k) => f[k] !== undefined && f[k] !== '' && f[k] !== false);
+      await ctx.track('scout_search', { filters: used, results: page.length, firstPage: !f.cursor });
       return {
         items: await playerCards(ctx.deps, ctx.actor, page.map((r) => r.id)),
         nextCursor: rows.length > f.limit && last ? encodeCursor(new Date(0), last.id) : null,
@@ -142,8 +147,10 @@ export const scoutRoutes = [
         if (limits.shortlistSlots !== null && !slots.alreadyListed && slots.used >= limits.shortlistSlots) {
           throw new ApiError(403, 'QUOTA_SHORTLIST_SLOTS', `your plan includes ${limits.shortlistSlots} shortlist slots; remove a player or upgrade for unlimited shortlists`);
         }
-        await tx.insertInto('shortlist_players').values({ shortlist_id: s.id, player_id: playerId })
-          .onConflict((oc) => oc.columns(['shortlist_id', 'player_id']).doNothing()).execute();
+        return tx.insertInto('shortlist_players').values({ shortlist_id: s.id, player_id: playerId })
+          .onConflict((oc) => oc.columns(['shortlist_id', 'player_id']).doNothing()).returning('player_id').executeTakeFirst();
+      }).then(async (added) => {
+        if (added) await ctx.track('shortlist_add', { shortlistId: s.id, playerId });
       });
     },
   ),
@@ -191,7 +198,8 @@ export const scoutRoutes = [
       ctx.authorize({ kind: 'scout.use' });
       const playerId = Uuid.safeParse(ctx.params.playerId);
       if (!playerId.success) throw notFound('player');
-      await sendContactRequest(ctx.deps, ctx.me(), playerId.data, ctx.body.message);
+      const req = await sendContactRequest(ctx.deps, ctx.me(), playerId.data, ctx.body.message);
+      await ctx.track('contact_requested', { contactRequestId: req.id, playerId: playerId.data, origin: 'profile' });
     },
   ),
 
@@ -234,6 +242,9 @@ export const scoutRoutes = [
         await tx.updateTable('contact_requests').set({ status, responded_at: ctx.deps.now() }).where('id', '=', r.id).execute();
         await notify(tx, r.scout_id, `contact.${status}`, { requestId: r.id, playerId: r.player_id });
         await audit(tx, { actorId: me.userId, action: `scout.contact_${status}`, targetKind: 'user', targetId: r.player_id, metadata: { requestId: r.id } });
+        return { id: r.id, status };
+      }).then(async (answered) => {
+        if (answered.status === 'accepted') await ctx.track('contact_accepted', { contactRequestId: answered.id });
       });
     },
   ),

@@ -36,6 +36,24 @@ export interface AgeRecords {
   user_id: string;
 }
 
+export interface AnalyticsDaily {
+  day: Timestamp;
+  dimension: Generated<string>;
+  metric: string;
+  updated_at: Generated<Timestamp>;
+  value: Int8;
+}
+
+export interface AnalyticsEvents {
+  anon_id: string | null;
+  created_at: Generated<Timestamp>;
+  id: Generated<Int8>;
+  name: string;
+  properties: Generated<Json>;
+  source: string;
+  user_id: string | null;
+}
+
 export interface AuditLogs {
   action: string;
   actor_id: string | null;
@@ -214,6 +232,18 @@ export interface CrmStageHistory {
   from_stage: string | null;
   id: string;
   to_stage: string;
+}
+
+export interface FeatureFlags {
+  audience: Generated<Json>;
+  client_visible: Generated<boolean>;
+  created_at: Generated<Timestamp>;
+  description: string;
+  enabled: Generated<boolean>;
+  key: string;
+  rollout_percentage: Generated<number>;
+  updated_at: Generated<Timestamp>;
+  updated_by: string | null;
 }
 
 export interface Follows {
@@ -399,6 +429,7 @@ export interface PlayerProfiles {
 }
 
 export interface PrivacySettings {
+  allow_analytics: Generated<boolean>;
   allow_contact_requests: Generated<boolean>;
   allow_scout_discovery: Generated<boolean>;
   comments: Generated<string>;
@@ -422,6 +453,15 @@ export interface Profiles {
   updated_at: Generated<Timestamp>;
   user_id: string;
   verified_at: Timestamp | null;
+}
+
+export interface QualifiedDiscoveries {
+  created_at: Generated<Timestamp>;
+  day: Timestamp;
+  discoverer_id: string;
+  discoverer_kind: string;
+  player_id: string;
+  source: string;
 }
 
 export interface RateLimitHits {
@@ -632,6 +672,8 @@ export interface VideoViews {
 
 export interface DB {
   age_records: AgeRecords;
+  analytics_daily: AnalyticsDaily;
+  analytics_events: AnalyticsEvents;
   audit_logs: AuditLogs;
   billing_customers: BillingCustomers;
   billing_events: BillingEvents;
@@ -649,6 +691,7 @@ export interface DB {
   crm_entries: CrmEntries;
   crm_notes: CrmNotes;
   crm_stage_history: CrmStageHistory;
+  feature_flags: FeatureFlags;
   follows: Follows;
   guardian_invitations: GuardianInvitations;
   guardian_relationships: GuardianRelationships;
@@ -668,6 +711,7 @@ export interface DB {
   player_profiles: PlayerProfiles;
   privacy_settings: PrivacySettings;
   profiles: Profiles;
+  qualified_discoveries: QualifiedDiscoveries;
   rate_limit_hits: RateLimitHits;
   regions: Regions;
   reports: Reports;

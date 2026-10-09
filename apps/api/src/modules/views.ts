@@ -30,7 +30,7 @@ export async function loadStoredProfile(db: Database, userId: string): Promise<S
       'profiles.region_id', 'age_records.age_band', 'privacy_settings.profile_visibility', 'privacy_settings.region_precision',
       'privacy_settings.direct_messages', 'privacy_settings.comments', 'privacy_settings.allow_scout_discovery',
       'privacy_settings.allow_contact_requests', 'privacy_settings.show_country', 'privacy_settings.show_region',
-      'privacy_settings.show_age', 'player_profiles.user_id as player_id',
+      'privacy_settings.show_age', 'privacy_settings.allow_analytics', 'player_profiles.user_id as player_id',
       'player_profiles.primary_position', 'player_profiles.secondary_positions', 'player_profiles.preferred_foot',
     ])
     .where('users.id', '=', userId)
@@ -56,6 +56,7 @@ export async function loadStoredProfile(db: Database, userId: string): Promise<S
       showCountry: row.show_country,
       showRegion: row.show_region,
       showAge: row.show_age,
+      allowAnalytics: row.allow_analytics,
     },
     player: row.player_id
       ? {

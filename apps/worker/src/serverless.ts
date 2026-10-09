@@ -6,6 +6,7 @@ import { ClaudeVideoAnalyzer } from './analyzer/claude.js';
 import { loadConfig } from './config.js';
 import type { Config } from './config.js';
 import { runMaintenance } from './maintenance.js';
+import { queueDepth } from './queue.js';
 import type { MaintenanceReport } from './maintenance.js';
 import type { Logger } from './pipeline.js';
 import { S3VideoStorage } from './storage/s3.js';
@@ -20,6 +21,10 @@ const log: Logger = {
 export interface BatchReport {
   jobs: number;
   ms: number;
+  /** Outcomes of the jobs run in this batch. */
+  outcomes: { done: number; retried: number; failed: number };
+  /** Queue depth after the batch. */
+  queue: { queued: number; running: number; failed24h: number } | null;
   maintenance: MaintenanceReport | null;
 }
 
@@ -101,9 +106,13 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
   const started = Date.now();
   try {
     const rt = getRuntime();
+    const before = { ...rt.worker.stats };
     const jobs = await runBatch(rt.worker, { claimBudgetMs: rt.config.SERVERLESS_CLAIM_BUDGET_MS });
     const maintenance = await runMaintenance(rt.db, rt.storage, log);
-    const report: BatchReport = { jobs, ms: Date.now() - started, maintenance };
+    const queue = await queueDepth(rt.db).catch(() => null);
+    const s = rt.worker.stats;
+    const outcomes = { done: s.done - before.done, retried: s.retried - before.retried, failed: s.failed - before.failed };
+    const report: BatchReport = { jobs, ms: Date.now() - started, outcomes, queue, maintenance };
     log.info('worker batch finished', { ...report });
     send(res, 200, report);
   } catch (err) {

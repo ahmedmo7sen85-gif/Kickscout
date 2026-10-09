@@ -31,7 +31,7 @@ export const PROFILE_VISIBILITIES = ['public', 'unlisted', 'followers', 'private
 export const NOTIFICATION_PREFERENCE_KEYS = ['follower', 'like', 'comment', 'saveMilestone', 'challenge', 'scoutContact', 'shortlistActivity',
   'verification', 'announcements'] as const satisfies readonly NotificationPreferenceKey[];
 /** Privacy toggles shown in Settings, in display order. */
-export const PRIVACY_TOGGLES = ['allowScoutDiscovery', 'allowContactRequests', 'showCountry', 'showRegion', 'showAge'] as const;
+export const PRIVACY_TOGGLES = ['allowScoutDiscovery', 'allowContactRequests', 'showCountry', 'showRegion', 'showAge', 'allowAnalytics'] as const;
 
 /** Client-side hints only; the server checks the real file. Must equal the contract limits. */
 export const MAX_UPLOAD_BYTES = 200 * 1024 * 1024;

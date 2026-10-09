@@ -7,7 +7,8 @@ skills, fans discover and follow them, and verified scouts search, shortlist and
 through a controlled, safety-first workflow. AI organises the content (skill tags, moderation);
 it never rates a player's ability or "professional potential".
 
-English first, Arabic (RTL) ready.
+English first, Arabic (RTL) ready. Spanish, Portuguese and French are machine-quality translations
+that need a native speaker's review before launch.
 
 ## What works today
 
@@ -27,6 +28,12 @@ English first, Arabic (RTL) ready.
 | Admin | Moderation queue (AI flags, rule hits, merged user reports) with approve / reject / remove / restrict / escalate / suspend, verification decisions, user suspend/restore, challenges, jurisdiction rules, stats, append-only audit log | API tests |
 | Web app | Next.js app in the KICKSCOUT design: landing page, feed, upload flow, profiles, Discover, Talent Radar, challenges, search, scout dashboard, notifications, settings, admin | See `apps/web` |
 | Plans and billing | Plans, prices (per currency, minor units), trials and limits live in the database; one entitlements module turns a user's plans into FEATURE_* flags and limits (clip length, live videos, uploads per day, scout searches per month, shortlist slots, seats); quotas enforced on uploads, scout search and shortlists; Stripe Checkout + Billing Portal behind a `PaymentProvider` interface (test mode only); signed, idempotent webhooks are the only thing that grants a paid plan; coupons and referral codes; minors cannot buy (a guardian buys for them); `/pricing` page and a Billing section in Settings | API + domain + web tests (Stripe itself is faked; no live Stripe call made yet) |
+| Product analytics | Allowlisted event registry (`packages/contracts/src/analytics.ts`) with strict per-event properties (ids and coarse enums only: no names, free text, search terms, raw IPs or URLs with query strings); `track()` at signup, upload, publish, views, likes, saves, follows, scout search, shortlist, pipeline stage, contact request/accept, checkout and subscription; `POST /v1/events` for browser events (allowlisted, rate-limited, max 20 per batch); an analytics opt-out in Settings (and GPC/DNT for signed-out visitors) keeps only payment and safety events; minors' identifying properties are stripped; daily rollups into aggregates, then raw events older than 180 days are deleted | Contracts + worker + API + web tests |
+| Metrics | North Star "Qualified Talent Discoveries" computed daily, DAU/WAU, uploads, publishes, scout searches, contact requests and three funnels at `GET /v1/admin/metrics` (admin + MFA) and `/admin/metrics` (SVG charts, each with a data table) | Worker + API + web tests |
+| Feature flags | Database flags with deterministic percentage bucketing, role/country audiences, a 30 s server cache, admin CRUD with audit log, `GET /v1/flags` and `useFlag()` in the web app; `nl_scout_search`, `for_you_personalization` and `hls_streaming` are seeded off | Domain + API + web tests |
+| Observability | One JSON access-log line per request (request id, hashed user id, route, status, latency), `x-request-id` echoed, an `ErrorReporter` interface (logs by default), `GET /v1/health` and `GET /v1/ready`, worker batch metrics (jobs done/retried/failed, busy time, queue depth) | API + worker tests |
+| SEO | Per-page title, description, canonical URL and Open Graph/Twitter cards with a brand image; `sitemap.xml` (only indexable profiles and videos, from `GET /v1/sitemap`); `robots.txt`; JSON-LD `ProfilePage` and `VideoObject` on indexable pages only | API + web tests |
+| Languages and accessibility | English, Arabic (RTL), Spanish, Portuguese and French with key parity; locale switcher; `Accept-Language` default; WCAG 2.2 AA basics (contrast tokens, 24 px targets, visible focus, labelled controls) checked by tests | Web tests |
 | Demo content | Labelled demo players, scout and challenges using the 20 promo clips, refused in production | API test |
 
 ### Not built yet (and labelled as such in the product)
@@ -40,7 +47,8 @@ English first, Arabic (RTL) ready.
 - Production email for guardian invitations (`MAILER=log` prints the link; production refuses to
   start with it).
 - Rate limits are per-process; use a shared store when running more than one API instance.
-- Product analytics events and dashboards.
+- Analytics events are not part of the JSON data export (they are deleted with the account).
+  No third-party error tracker is wired yet: `ErrorReporter` logs; plug a vendor in through it.
 
 ## Architecture
 
@@ -236,6 +244,31 @@ on the Checkout page itself.
   signed-out viewers are counted by a daily salted hash, never a raw IP.
 - The audit log is append-only at the database level and records consent, safety, moderation,
   verification, scout search and admin actions.
+
+## Analytics, North Star and feature flags
+
+**North Star: Qualified Talent Discoveries.** A distinct (discoverer, player) pair counted on the
+UTC day a verified scout (or a verified organization, for its pipeline and its contact requests)
+adds an active player to a shortlist, puts or moves the player's pipeline card to Shortlisted or a
+later stage other than Archived, or sends a contact request. A pair counts at most once in any 30
+days. It is computed from the scouting tables themselves, so the analytics opt-out does not change
+it. The exact text is `NORTH_STAR.definition` in `packages/contracts/src/analytics.ts`.
+
+The worker's daily maintenance rolls up every finished day into `analytics_daily` (event counts,
+distinct users, DAU, WAU, North Star), then deletes raw `analytics_events` older than 180 days
+whose day is rolled up. DAU/WAU count signed-in people with at least one recorded event, so
+people who turned analytics off are under-counted by design. Signed-out visitors are identified
+only by a daily-rotating keyed hash (never stored IPs).
+
+Feature flags live in `feature_flags`. A flag is on for a person when it is enabled, the person
+matches its audience (roles, countries) and `hash(key:userId) % 100 < rollout`. Signed-out
+visitors only see flags at 100 %. Changes go through `/v1/admin/flags` (admin + MFA) and are
+written to the audit log; each API instance caches flags for 30 seconds.
+
+Operations: point uptime checks at `GET /v1/health` (database ping, 503 when down) and deploy
+checks at `GET /v1/ready` (503 until migration `0008_analytics_flags.sql` is applied). Send an
+`x-request-id` header to correlate logs; the API echoes it (or generates one). Set
+`NEXT_PUBLIC_SITE_URL` on the web app: canonical URLs, `sitemap.xml` and `robots.txt` use it.
 
 ## Moderation
 

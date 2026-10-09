@@ -19,11 +19,13 @@ export const socialRoutes = [
       ctx.authorize({ kind: 'social.engage' });
       const { row } = await visibleVideo(ctx.deps, ctx.actor, ctx.params.videoId!);
       const me = ctx.me();
-      await ctx.deps.db.transaction().execute(async (tx) => {
+      const liked = await ctx.deps.db.transaction().execute(async (tx) => {
         const res = await tx.insertInto('likes').values({ user_id: me.userId, video_id: row.id })
           .onConflict((oc) => oc.columns(['video_id', 'user_id']).doNothing()).returning('video_id').executeTakeFirst();
         if (res && row.owner_user_id !== me.userId) await notify(tx, row.owner_user_id, 'like', { videoId: row.id, userId: me.userId });
+        return Boolean(res);
       });
+      if (liked) await ctx.track('video_liked', { videoId: row.id });
     },
   ),
   route(
@@ -39,13 +41,15 @@ export const socialRoutes = [
       ctx.authorize({ kind: 'social.engage' });
       const { row } = await visibleVideo(ctx.deps, ctx.actor, ctx.params.videoId!);
       const me = ctx.me();
-      await ctx.deps.db.transaction().execute(async (tx) => {
+      const saved = await ctx.deps.db.transaction().execute(async (tx) => {
         const res = await tx.insertInto('saves').values({ user_id: me.userId, video_id: row.id })
           .onConflict((oc) => oc.columns(['user_id', 'video_id']).doNothing()).returning('video_id').executeTakeFirst();
-        if (!res || row.owner_user_id === me.userId) return;
+        if (!res || row.owner_user_id === me.userId) return Boolean(res);
         const { n } = await tx.selectFrom('saves').select(tx.fn.countAll<string>().as('n')).where('video_id', '=', row.id).executeTakeFirstOrThrow();
         if ((SAVE_MILESTONES as readonly number[]).includes(Number(n))) await notify(tx, row.owner_user_id, 'save.milestone', { videoId: row.id, saves: Number(n) });
+        return true;
       });
+      if (saved) await ctx.track('video_saved', { videoId: row.id });
     },
   ),
   route(
@@ -74,11 +78,13 @@ export const socialRoutes = [
       if (target === me.userId) throw new ApiError(400, 'SELF_FOLLOW', 'you cannot follow yourself');
       const exists = await ctx.deps.db.selectFrom('users').select('id').where('id', '=', target).where('status', '=', 'active').executeTakeFirst();
       if (!exists || (await blockedEitherWay(ctx.deps.db, me.userId, target))) throw notFound('user');
-      await ctx.deps.db.transaction().execute(async (tx) => {
+      const followed = await ctx.deps.db.transaction().execute(async (tx) => {
         const res = await tx.insertInto('follows').values({ follower_id: me.userId, followee_id: target })
           .onConflict((oc) => oc.columns(['follower_id', 'followee_id']).doNothing()).returning('followee_id').executeTakeFirst();
         if (res) await notify(tx, target, 'follow', { userId: me.userId });
+        return Boolean(res);
       });
+      if (followed) await ctx.track('follow', { followeeId: target });
     },
   ),
   route(

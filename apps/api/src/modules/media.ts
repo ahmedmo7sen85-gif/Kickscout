@@ -275,6 +275,7 @@ export const mediaRoutes = [
         if (b.skillKey) await tx.insertInto('video_skills').values({ video_id: videoId, skill_key: b.skillKey, source: 'user' }).execute();
         if (b.challengeId) await tx.insertInto('challenge_entries').values({ challenge_id: b.challengeId, video_id: videoId }).execute();
       });
+      await ctx.track('upload_started', { videoId, challenge: Boolean(b.challengeId) });
       return { videoId, upload: { url: upload.url, method: 'PUT' as const, headers: upload.headers, expiresAt: upload.expiresAt.toISOString() } };
     },
   ),
@@ -378,8 +379,10 @@ export const mediaRoutes = [
       const day = ctx.deps.now().toISOString().slice(0, 10);
       // Signed-out viewers are counted by a daily salted hash, so no raw IP is stored.
       const viewerKey = ctx.actor?.userId ?? viewerHash(ctx.deps, `${ctx.req.ip}|${ctx.req.headers['user-agent'] ?? ''}`, day);
-      await ctx.deps.db.insertInto('video_views').values({ video_id: row.id, viewer_key: viewerKey, day })
-        .onConflict((oc) => oc.columns(['video_id', 'viewer_key', 'day']).doNothing()).execute();
+      const counted = await ctx.deps.db.insertInto('video_views').values({ video_id: row.id, viewer_key: viewerKey, day })
+        .onConflict((oc) => oc.columns(['video_id', 'viewer_key', 'day']).doNothing()).returning('video_id').executeTakeFirst();
+      // One analytics event per counted view, like the view counter itself.
+      if (counted) await ctx.track('video_viewed', { videoId: row.id });
     },
   ),
 

@@ -13,6 +13,7 @@ export const profileRoutes = [
       // Hidden and missing profiles look the same, so existence is not leaked.
       const view = row ? await profileView(ctx.deps, ctx.actor, row.user_id) : null;
       if (!view) throw notFound('profile');
+      await ctx.track('profile_viewed', { profileId: view.userId, self: ctx.actor?.userId === view.userId });
       return view;
     },
   ),

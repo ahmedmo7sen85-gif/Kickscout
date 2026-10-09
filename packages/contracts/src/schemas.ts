@@ -5,7 +5,7 @@
 import { z } from 'zod';
 
 export const Id = z.uuid();
-export const Locale = z.enum(['en', 'ar']);
+export const Locale = z.enum(['en', 'ar', 'es', 'pt', 'fr']);
 export const Position = z.enum(['GK', 'CB', 'LB', 'RB', 'WB', 'DM', 'CM', 'AM', 'LW', 'RW', 'FW', 'ST']);
 export const Foot = z.enum(['left', 'right', 'both']);
 export const SkillKey = z.enum(['dribbling', 'elastico', 'step_over', 'rainbow_flick', 'cruyff_turn', 'roulette', 'nutmeg',
@@ -424,6 +424,8 @@ export const PrivacySettingsView = z.object({
   showCountry: z.boolean(),
   showRegion: z.boolean(),
   showAge: z.boolean(),
+  /** Off: only strictly necessary product-analytics events are recorded (billing and safety). */
+  allowAnalytics: z.boolean(),
   /** True for minors: stricter rules apply whatever these settings say, and only the guardian can loosen them. */
   minorProtections: z.boolean(),
 });

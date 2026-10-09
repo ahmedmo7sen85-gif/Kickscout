@@ -7,6 +7,15 @@ import { ApiError } from './errors.js';
 import { loadActor } from './actor.js';
 import type { Identity } from './auth.js';
 import type { Deps } from '../deps.js';
+import type { AnalyticsEventName, AnalyticsProps } from '@fp/contracts';
+import { track } from './analytics.js';
+
+declare module 'fastify' {
+  interface FastifyRequest {
+    /** The registered caller, once loaded; logged as a keyed hash, never as the raw id. */
+    actorId?: string;
+  }
+}
 
 /**
  * Auth modes:
@@ -32,6 +41,13 @@ export interface Ctx<Q, B> {
   me(): Actor;
   /** Runs the policy and throws 403 with the policy's code when denied. */
   authorize(action: Action): void;
+  /**
+   * Records an analytics event about the caller (or about `userId` when given, e.g. right after
+   * registration). Never throws; what is kept is decided by the event registry and the person's preference.
+   */
+  track<N extends AnalyticsEventName>(name: N, properties: AnalyticsProps<N>, subject?: { userId: string; minor?: boolean }): Promise<void>;
+  /** Overrides the route's success status (e.g. 503 from a health check). */
+  setStatus(status: number): void;
 }
 
 export interface RateLimit {
@@ -91,6 +107,8 @@ export function register(app: FastifyInstance, deps: Deps, routes: readonly ApiR
           }
           if (r.auth === 'user' && !actor) throw new ApiError(403, 'NOT_REGISTERED', 'complete registration first');
         }
+        if (actor) req.actorId = actor.userId;
+        let status = r.status ?? 200;
 
         const ctx: Ctx<unknown, unknown> = {
           req,
@@ -108,10 +126,16 @@ export function register(app: FastifyInstance, deps: Deps, routes: readonly ApiR
             const decision = can(this.me(), action);
             if (!decision.allowed) throw new ApiError(403, decision.code, decision.reason);
           },
+          track(name, properties, subject) {
+            return track(deps, req.log, name, properties, subject ?? { actor, req });
+          },
+          setStatus(code) {
+            status = code;
+          },
         };
 
         const result = await r.handler(ctx);
-        reply.status(r.status ?? 200);
+        reply.status(status);
         if (r.response === undefined) return reply.send();
         // Responses are validated too, so the contract cannot silently drift.
         return reply.send(r.response.parse(result));

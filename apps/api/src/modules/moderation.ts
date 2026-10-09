@@ -160,6 +160,7 @@ export const moderationRoutes = [
       const me = ctx.me();
       const { decision, note } = ctx.body;
       let published: string | null = null;
+      let publishedOwner: string | null = null;
       await ctx.deps.db.transaction().execute(async (tx) => {
         const c = await tx.selectFrom('moderation_cases').selectAll().where('id', '=', z.uuid().parse(ctx.params.caseId)).forUpdate().executeTakeFirst();
         if (!c) throw notFound('case');
@@ -188,6 +189,7 @@ export const moderationRoutes = [
               await tx.updateTable('videos').set({ status: 'published', moderation: 'safe', status_reason: null, published_at: now }).where('id', '=', v.id).execute();
               await notify(tx, v.owner_user_id, 'video.published', { videoId: v.id });
               published = v.id;
+              publishedOwner = v.owner_user_id;
             } else if (decision === 'restrict') {
               await tx.updateTable('videos').set({ visibility: 'private' }).where('id', '=', v.id).execute();
               await notify(tx, v.owner_user_id, 'video.restricted', { videoId: v.id });
@@ -223,6 +225,7 @@ export const moderationRoutes = [
       // worker's maintenance run catches up if this fails.
       if (published) {
         await runSavedSearchAlerts(ctx.deps.db, { videoIds: [published] }).catch((err: Error) => ctx.req.log.warn({ err }, 'saved-search alerts failed'));
+        if (publishedOwner) await ctx.track('upload_published', { videoId: published }, { userId: publishedOwner });
       }
     },
   ),

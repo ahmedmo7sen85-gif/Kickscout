@@ -7,6 +7,7 @@ import { audienceAllowed, FEATURES, isFeature, isMinor, nextMonthStart, planLimi
 import type { AgeBand, Role, SubscriptionStatus } from '@fp/domain';
 import type { DB } from '@fp/db';
 import type { Deps } from '../deps.js';
+import { recordServerEvent } from '@fp/worker/analytics';
 import { route } from '../platform/route.js';
 import { ApiError, conflict, forbidden, notFound } from '../platform/errors.js';
 import { newId } from '../platform/ids.js';
@@ -131,6 +132,10 @@ async function applySubscription(tx: Transaction<DB>, deps: Deps, providerName: 
   else if (wasGranting && !nowGranting) kind = 'billing.subscription_ended';
   else if (existing && !existing.cancel_at_period_end && s.cancelAtPeriodEnd) kind = 'billing.cancellation_scheduled';
   if (kind) for (const r of recipients) await notify(tx, r, kind, payload);
+  // Recorded with the webhook's effects, so a replayed event is not counted twice.
+  if (kind === 'billing.subscription_started' && (s.status === 'active' || s.status === 'trialing')) {
+    await recordServerEvent(tx, 'subscription_activated', { planKey, status: s.status }, { userId: userId! });
+  }
   await audit(tx, { actorId: null, action: 'billing.subscription_synced', targetKind: 'user', targetId: userId!, metadata: { event: ev.type, eventId: ev.id, planKey, status: s.status } });
   return 'applied';
 }
@@ -328,6 +333,7 @@ export const billingRoutes = [
         }).execute();
         await audit(tx, { actorId: me.userId, action: 'billing.checkout_started', targetKind: 'user', targetId: subject.id, metadata: { planKey: plan.key, interval: b.interval, currency: price.currency, trialDays, coupon: coupon?.code ?? null } });
       });
+      await ctx.track('checkout_started', { planKey: plan.key, interval: b.interval, trial: trialDays > 0 });
       return { url: session.url, sessionId: session.id, planKey: plan.key, interval: b.interval, currency: price.currency, amountMinor: price.amount_minor, trialDays };
     },
   ),

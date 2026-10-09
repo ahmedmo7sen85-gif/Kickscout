@@ -222,6 +222,11 @@ export function createApiClient(opts: ApiClientOptions = {}) {
     decideVerification: (id: string, b: T.VerificationDecisionRequest) => send<unknown>('POST', `/v1/admin/verification-requests/${e(id)}/decision`, b),
     auditLogs: (s?: AbortSignal) => get<T.AuditLogPage>('/v1/admin/audit-logs', undefined, s),
     createChallenge: (b: T.CreateChallengeRequest) => send<T.ChallengeView>('POST', '/v1/admin/challenges', b),
+    adminMetrics: (q: { days?: number } = {}, s?: AbortSignal) => get<T.AdminMetrics>('/v1/admin/metrics', q, s),
+
+    // product analytics and feature flags
+    trackEvents: (b: T.TrackEventsRequest) => send<T.TrackEventsResponse>('POST', '/v1/events', b),
+    flags: (s?: AbortSignal) => get<T.EvaluatedFlags>('/v1/flags', undefined, s),
 
     // organizations
     createOrg: (b: T.CreateOrganizationRequest) => send<T.OrganizationPublicView>('POST', '/v1/orgs', b),

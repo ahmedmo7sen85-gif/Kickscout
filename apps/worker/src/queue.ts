@@ -103,3 +103,15 @@ export async function recoverStaleJobs(db: Database, timeoutMs: number): Promise
     RETURNING id, kind, payload, status, attempts, max_attempts, run_after, locked_at, last_error`.execute(db);
   return { requeued: Number(requeued.numUpdatedRows), failed };
 }
+
+/** Queue depth for batch metrics: jobs waiting to run, running now, and failed for good in the last 24 hours. */
+export async function queueDepth(db: Database): Promise<{ queued: number; running: number; failed24h: number }> {
+  const row = await db.selectFrom('jobs')
+    .select((eb) => [
+      eb.fn.countAll<string>().filterWhere('status', '=', 'queued').as('queued'),
+      eb.fn.countAll<string>().filterWhere('status', '=', 'running').as('running'),
+      eb.fn.countAll<string>().filterWhere((w) => w.and([w('status', '=', 'failed'), w('finished_at', '>', new Date(Date.now() - 86_400_000))])).as('failed24h'),
+    ])
+    .executeTakeFirstOrThrow();
+  return { queued: Number(row.queued), running: Number(row.running), failed24h: Number(row.failed24h) };
+}

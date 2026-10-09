@@ -7,6 +7,7 @@ import { Providers } from '@/components/Providers';
 import { publicEnv } from '@/lib/env';
 import { dirFor, getDict } from '@/lib/i18n';
 import { getLocale } from '@/lib/i18n/server';
+import { BRAND_IMAGE } from '@/lib/seo';
 import './globals.css';
 
 export async function generateMetadata(): Promise<Metadata> {
@@ -16,8 +17,9 @@ export async function generateMetadata(): Promise<Metadata> {
     title: { default: t.meta.title, template: '%s · KICKSCOUT' },
     description: t.meta.description,
     applicationName: 'KICKSCOUT',
-    openGraph: { type: 'website', siteName: 'KICKSCOUT', title: t.meta.title, description: t.meta.description },
-    twitter: { card: 'summary_large_image', title: t.meta.title, description: t.meta.description },
+    // No canonical here: each indexable page sets its own (see lib/seo.ts), so none inherits the home page's.
+    openGraph: { type: 'website', siteName: 'KICKSCOUT', title: t.meta.title, description: t.meta.description, images: [{ ...BRAND_IMAGE, alt: t.meta.ogAlt }] },
+    twitter: { card: 'summary_large_image', title: t.meta.title, description: t.meta.description, images: [BRAND_IMAGE.url] },
   };
 }
 

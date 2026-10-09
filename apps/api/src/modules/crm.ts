@@ -174,6 +174,7 @@ function buildCrmRoutes(prefix: string, kind: ScopeKind) {
           await recordStage(tx, s, me.userId, e, null, e.stage);
           return e;
         });
+        if (row) await ctx.track('crm_stage_changed', { entryId: row.id, playerId: row.player_id, from: null, to: row.stage as CrmStage, scope: s.kind === 'org' ? 'organization' : 'personal' });
         // Lost a race with another member adding the same player: return their card.
         return entryView(ctx.deps, me, row ?? (await entriesIn(ctx.deps.db, s).selectAll().where('crm_entries.player_id', '=', playerId.data).executeTakeFirstOrThrow()));
       },
@@ -230,6 +231,11 @@ function buildCrmRoutes(prefix: string, kind: ScopeKind) {
           const updated = await tx.updateTable('crm_entries').set({ stage: to, contact_request_id: contactRequestId, updated_at: ctx.deps.now() })
             .where('id', '=', e.id).returningAll().executeTakeFirstOrThrow();
           await recordStage(tx, s, me.userId, e, e.stage, to, contactRequestId !== e.contact_request_id ? { contactRequestId } : {});
+          return { updated, from: e.stage as CrmStage, newContactRequest: contactRequestId !== e.contact_request_id ? contactRequestId : null };
+        }).then(async ({ updated, from, newContactRequest }) => {
+          const scope = s.kind === 'org' ? 'organization' as const : 'personal' as const;
+          await ctx.track('crm_stage_changed', { entryId: updated.id, playerId: updated.player_id, from, to, scope });
+          if (newContactRequest) await ctx.track('contact_requested', { contactRequestId: newContactRequest, playerId: updated.player_id, origin: 'pipeline' });
           return updated;
         });
         return entryView(ctx.deps, me, row);

@@ -1,12 +1,15 @@
 import 'server-only';
-import { cookies } from 'next/headers';
-import { DEFAULT_LOCALE, getDict, isLocale, LOCALE_COOKIE } from './index';
+import { cookies, headers } from 'next/headers';
+import { getDict, isLocale, LOCALE_COOKIE, negotiateLocale } from './index';
 import type { Locale } from '../types';
 
+/** The chosen locale: the switcher's cookie first, then the browser's Accept-Language, then English. */
 export async function getLocale(): Promise<Locale> {
   const store = await cookies();
   const v = store.get(LOCALE_COOKIE)?.value;
-  return isLocale(v) ? v : DEFAULT_LOCALE;
+  if (isLocale(v)) return v;
+  const h = await headers();
+  return negotiateLocale(h.get('accept-language'));
 }
 
 export async function getServerDict() {

@@ -144,3 +144,15 @@ export type CheckoutResponse = z.infer<typeof C.CheckoutResponse>;
 export type PortalResponse = z.infer<typeof C.PortalResponse>;
 export type CouponValidateRequest = z.input<typeof C.CouponValidateRequest>;
 export type CouponView = z.infer<typeof C.CouponView>;
+
+// analytics, flags, metrics, SEO (Phase E1)
+export type ClientEventName = C.ClientEventName;
+export type TrackEventsRequest = z.input<typeof C.TrackEventsRequest>;
+export type TrackEventsResponse = z.infer<typeof C.TrackEventsResponse>;
+export type AdminMetrics = z.infer<typeof C.AdminMetrics>;
+export type MetricPoint = z.infer<typeof C.MetricPoint>;
+export type FunnelView = z.infer<typeof C.FunnelView>;
+export type EvaluatedFlags = z.infer<typeof C.EvaluatedFlags>;
+export type FeatureFlagView = z.infer<typeof C.FeatureFlagView>;
+export type SitemapView = z.infer<typeof C.SitemapView>;
+export type SeoProfileView = z.infer<typeof C.SeoProfileView>;

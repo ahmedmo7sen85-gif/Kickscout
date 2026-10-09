@@ -14,6 +14,7 @@ import type { MediaTools, ProbeInfo, TrimWindow } from './media.js';
 import { playbackKey, thumbnailKey } from './storage/storage.js';
 import type { VideoStorage } from './storage/storage.js';
 import { runSavedSearchAlerts } from './alerts.js';
+import { recordServerEvent } from './analytics.js';
 
 export interface Logger {
   info(msg: string, fields?: Record<string, unknown>): void;
@@ -228,6 +229,8 @@ export async function processVideo(deps: PipelineDeps, videoId: string): Promise
     if (decision.status === 'published') {
       // Saved-search alerts for scouts. Best effort: the next maintenance run catches up on a failure.
       await runSavedSearchAlerts(db, { videoIds: [videoId] }).catch((err: Error) => log.warn('saved-search alerts failed', { videoId, error: err.message }));
+      await recordServerEvent(db, 'upload_published', { videoId }, { userId: video.owner_user_id })
+        .catch((err: Error) => log.warn('analytics event failed', { videoId, error: err.message }));
     }
     log.info('video processed', { videoId, status: decision.status, categories: decision.case?.categories });
     return { outcome: decision.status };

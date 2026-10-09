@@ -1,10 +1,11 @@
 import type { Metadata } from 'next';
+import { pageMetadata } from '@/lib/seo';
 import { ButtonLink } from '@/components/ui/Button';
 import { getServerDict } from '@/lib/i18n/server';
 
 export async function generateMetadata(): Promise<Metadata> {
   const { t } = await getServerDict();
-  return { title: t.nav.forPlayers, description: t.pages.forPlayersIntro };
+  return pageMetadata({ t, title: t.nav.forPlayers, description: t.pages.forPlayersIntro, path: '/for-players' });
 }
 
 export default async function ForPlayersPage() {

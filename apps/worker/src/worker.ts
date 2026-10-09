@@ -21,7 +21,17 @@ interface JobHandler {
   onFailed(job: JobRow, error: string): Promise<void>;
 }
 
+/** Job outcomes since the worker was created; logged as batch metrics. */
+export interface WorkerStats {
+  done: number;
+  retried: number;
+  failed: number;
+  /** Total milliseconds spent running jobs (any outcome). */
+  busyMs: number;
+}
+
 export class Worker {
+  readonly stats: WorkerStats = { done: 0, retried: 0, failed: 0, busyMs: 0 };
   private stopping = false;
   private readonly sleepers = new Set<() => void>();
   private loops: Promise<void>[] = [];
@@ -77,14 +87,18 @@ export class Worker {
       if (!handler) throw new PermanentJobError(`unknown job kind ${job.kind}`);
       await handler.run(job);
       await completeJob(this.db, job.id);
+      this.stats.done++;
       this.log.info('job done', { jobId: job.id, kind: job.kind, ms: Date.now() - started });
     } catch (err) {
       const error = err instanceof Error ? `${err.name}: ${err.message}` : String(err);
       const permanent = err instanceof PermanentJobError;
       const result = await failJob(this.db, job, error, { permanent, retryBaseMs: this.opts.retryBaseMs });
+      if (result === 'retry') this.stats.retried++;
+      else this.stats.failed++;
       this.log[result === 'retry' ? 'warn' : 'error']('job failed', { jobId: job.id, kind: job.kind, attempt: job.attempts, result, error });
       if (result === 'failed') await this.handlers[job.kind]?.onFailed(job, error);
     } finally {
+      this.stats.busyMs += Date.now() - started;
       clearInterval(beat);
     }
   }

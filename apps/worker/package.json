@@ -17,6 +17,10 @@
     "./alerts": {
       "types": "./dist/alerts.d.ts",
       "default": "./dist/alerts.js"
+    },
+    "./analytics": {
+      "types": "./dist/analytics.d.ts",
+      "default": "./dist/analytics.js"
     }
   },
   "scripts": {
