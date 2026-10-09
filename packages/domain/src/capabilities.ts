@@ -21,7 +21,10 @@ export const CAPABILITIES = {
   'ai.skill_tags': 'live',
   'ai.moderation': 'live',
   'search.keyword': 'live',
-  'search.natural_language': 'coming_soon',
+  // Built (AI parser with a rule-based fallback) but off until NL_SCOUT_SEARCH=on.
+  'search.natural_language': 'prototype',
+  // For You personalisation with user controls; off until FOR_YOU_PERSONALIZATION=on.
+  'feed.personalization': 'prototype',
   'talent_radar': 'live',
   'challenges': 'live',
   'scout.shortlists': 'live',

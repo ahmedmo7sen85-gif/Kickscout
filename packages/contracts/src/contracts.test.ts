@@ -4,7 +4,7 @@ import {
   CopyrightTakedownRequest, CreateOrgInvitationRequest, CreateSavedSearchRequest, CrmStageChangeRequest, AddToPipelineRequest, ReportRequest,
   UpdateOrganizationRequest, VerificationRequestCreate, CreateUploadRequest, DeleteAccountRequest, Position, RegisterRequest, SkillKey, UpdateNotificationPreferencesRequest,
   CheckoutRequest, CouponValidateRequest, PlanList,
-  VideoCategory, buildOpenApi,
+  VideoCategory, buildOpenApi, NlScoutSearchRequest, NlScoutSearchResponse, UpdateRecommendationSettingsRequest, RadarCategory, FeedPage,
 } from './index.js';
 
 describe('contracts', () => {
@@ -107,5 +107,18 @@ describe('contracts', () => {
     };
     expect(PlanList.safeParse({ currency: 'USD', paymentsEnabled: false, items: [plan] }).success).toBe(true);
     expect(PlanList.safeParse({ currency: 'USD', paymentsEnabled: false, items: [{ ...plan, limits: { ...plan.limits, maxVideoSeconds: null } }] }).success).toBe(false);
+  });
+
+  it('validates natural-language search and recommendation controls', () => {
+    expect(NlScoutSearchRequest.parse({ query: '  left wingers  ' })).toEqual({ query: 'left wingers', limit: 20 });
+    expect(NlScoutSearchRequest.safeParse({ query: '' }).success).toBe(false);
+    expect(NlScoutSearchRequest.safeParse({ query: 'x'.repeat(301) }).success).toBe(false);
+    const ok = { filters: { position: 'LW' }, parser: 'rules', model: null, explanation: { en: 'a', ar: 'b' }, results: { items: [], nextCursor: null } };
+    expect(NlScoutSearchResponse.safeParse(ok).success).toBe(true);
+    // A filter the scout search does not know is not a filter.
+    expect(NlScoutSearchResponse.shape.filters.strict().safeParse({ rating: 90 }).success).toBe(false);
+    expect(UpdateRecommendationSettingsRequest.safeParse({ personalize: false, track: true }).success).toBe(false);
+    expect(RadarCategory.options).toEqual(['rising', 'most_watched', 'most_saved', 'new_talents', 'hidden_gems', 'most_improved', 'top_by_skill', 'new_to_platform', 'regional_standouts']);
+    expect(FeedPage.parse({ tab: 'for_you', capability: { key: 'feed.for_you', status: 'live', label: null }, items: [], nextCursor: null })).toMatchObject({ personalized: false, why: {} });
   });
 });

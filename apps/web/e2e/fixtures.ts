@@ -31,8 +31,8 @@ export const feed = C.FeedPage.parse({
       title: 'Elastico past two defenders', skill: 'elastico', position: 'LW', country: 'EG', hashtags: ['elasticochallenge', 'skills'],
       likes: 1240, comments: 32, saves: 210,
       tags: [
-        { skill: 'elastico', name: { en: 'Elastico', ar: 'الإلاستيكو' }, source: 'user', confidence: null },
-        { skill: 'dribbling', name: { en: 'Dribbling', ar: 'المراوغة' }, source: 'ai', confidence: 0.82 },
+        { skill: 'elastico', name: { en: 'Elastico', ar: 'الإلاستيكو' }, source: 'user', confidence: null, model: null },
+        { skill: 'dribbling', name: { en: 'Dribbling', ar: 'المراوغة' }, source: 'ai', confidence: 0.82, model: null },
       ],
     }),
     video(2, b, { title: 'Reflex save drill', skill: 'goalkeeping', position: 'GK', country: 'MA', likes: 88 }),

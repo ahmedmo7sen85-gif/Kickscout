@@ -6,6 +6,8 @@ import { S3Storage } from './platform/storage.js';
 import { LogMailer } from './platform/mailer.js';
 import { StripePaymentProvider } from './platform/billing/stripe.js';
 import type { Deps } from './deps.js';
+import { AiRouter, ClaudeProvider, dbCallRecorder, routingFromEnv } from '@fp/ai';
+import { newId } from './platform/ids.js';
 
 /** Builds the configured app; shared by the long-running server (main.ts) and the Vercel function (vercel.ts). */
 export async function createServer(opts: { poolSize?: number } = {}) {
@@ -26,6 +28,10 @@ export async function createServer(opts: { poolSize?: number } = {}) {
       return mailer;
     },
     billing: config.STRIPE_SECRET_KEY && config.STRIPE_WEBHOOK_SECRET ? new StripePaymentProvider(config.STRIPE_SECRET_KEY, config.STRIPE_WEBHOOK_SECRET) : null,
+    ai: new AiRouter(config.ANTHROPIC_API_KEY ? ClaudeProvider.fromApiKey(config.ANTHROPIC_API_KEY) : null, routingFromEnv(process.env), {
+      recorder: dbCallRecorder(db, newId),
+      onRecordError: (err) => console.warn(JSON.stringify({ level: 'warn', msg: 'could not record an AI call', error: String(err) })),
+    }),
     dobKey: Buffer.from(config.DOB_ENCRYPTION_KEY, 'base64'),
     now: () => new Date(),
   };

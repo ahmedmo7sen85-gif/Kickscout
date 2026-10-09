@@ -16,9 +16,11 @@ English first, Arabic (RTL) ready.
 | Accounts | Supabase Auth tokens (email/password, Google) verified by the API; registration with age checks; roles PLAYER, FAN, SCOUT, MODERATOR, ADMIN (scout/staff roles are never self-assigned) | API tests |
 | Minor safety | Guardian invitation + consent, private-by-default profiles and uploads, no city/email/age for the public, followers-only comments, contact-harvesting comments held, scout contact routed to the guardian, per-country age rules that apply only after legal review | API + domain tests |
 | Videos | Signed direct upload, async processing queue, real-file validation (ffprobe + decode check), trim, H.264 720p transcode, thumbnail, duplicate detection, states UPLOADING → PROCESSING → ANALYZING → PUBLISHED / REVIEW_REQUIRED / REJECTED / FAILED | Worker tests (real ffmpeg clips) |
-| AI | Claude vision on sampled frames: football present, players visible, context, skill tags with confidence, moderation verdict SAFE / FLAGGED / REVIEW_REQUIRED / REJECTED. AI tags are stored as AI and can be corrected by the player. Ambiguous content goes to humans, never auto-deleted | Worker tests with a stubbed Claude client (no live call made yet) |
+| AI | Claude vision on sampled frames: football present, players visible, context, skill tags with confidence, moderation verdict SAFE / FLAGGED / REVIEW_REQUIRED / REJECTED. AI tags are stored as AI and can be corrected by the player. Ambiguous content goes to humans, never auto-deleted. One `@fp/ai` router (provider interface, Claude + fake) picks model and effort per task (heavy model for video analysis, light model for search parsing), with timeouts, retries with backoff, per-task token budgets, an `ai_calls` cost log, and the model recorded on every AI tag and verdict (shown to owners and staff). No rating, score or "potential" is ever accepted from a model: refused in code and by database constraints | Worker + API + `@fp/ai` tests with fake providers (no live call made yet) |
+| Natural-language scout search (prototype, off by default) | `POST /v1/scout/search/nl`: English or Arabic text to the normal scout filters (light model, or a built-in rule parser when no key is set or the model answer is unusable); the response says which parser was used, explains the filters, and returns results with the same privacy, minor and quota rules (counted once). Scout dashboard search box with editable filter chips. `NL_SCOUT_SEARCH=on` | API + domain + web tests |
+| For You personalisation (prototype, off by default) | Transparent ranking from followed players, skills and positions of liked or saved clips, and country; "Why am I seeing this?" on every For You clip, "Not interested", a "Personalize my feed" switch and "Reset history" in Settings. Never from watch time. `FOR_YOU_PERSONALIZATION=on` | API + domain + web tests |
 | Feed and social | For You, Following, New Talent, Trending; like, save, comment, share, follow, block, report; views counted once per viewer per day | API tests |
-| Discovery | Search (players, videos, hashtags, skills, country, position, foot), Discover page, Talent Radar with "Trending because…" reasons and categories (rising, most watched, most saved, new talents, hidden gems), challenges with direct-to-challenge upload | API + domain tests |
+| Discovery | Search (players, videos, hashtags, skills, country, position, foot), Discover page, Talent Radar with "Trending because…" reasons and categories (rising, most watched, most saved, new talents, hidden gems, most improved, top by skill, new to the platform, regional standouts), challenges with direct-to-challenge upload | API + domain tests |
 | Scouts | Verification by staff, filtered player search (age group, position, foot, country, skill, verified, followers), multiple shortlists, private notes, contact requests the player (or guardian) accepts or declines | API tests |
 | Organizations | Academies, clubs, agencies, schools: owner / admin / scout / analyst / viewer roles enforced per action, email invitations (hashed, expiring token bound to the verified address), role changes, removal, leave, ownership transfer, delete; verification through the admin queue with a badge; public profile without members; reports freeze the organization | API + domain + web tests |
 | Scout CRM | Personal and organization pipelines (New → Watching → Shortlisted → Monitoring → Contact Requested → Contacted → Evaluation → Archived) with stage history, private notes and tags; Contact Requested goes through the contact flow and its minor/guardian/consent rules; saved searches with alerts on newly published matching clips (in-app, honouring notification preferences); keyboard-operable kanban | API + worker + web tests |
@@ -31,8 +33,9 @@ English first, Arabic (RTL) ready.
 
 ### Not built yet (and labelled as such in the product)
 
-- Natural-language search, personalised recommendations (For You is newest-first today), scout
-  comparison, direct messaging, Apple sign-in: these return **Coming Soon** capability labels.
+- Natural-language search and For You personalisation are **Prototypes**, off until
+  `NL_SCOUT_SEARCH=on` / `FOR_YOU_PERSONALIZATION=on` (to be moved onto the feature-flag system).
+  Scout comparison, direct messaging, Apple sign-in return **Coming Soon** capability labels.
 - Paid plans are a **Prototype**: payments stay off until Stripe test keys are set, and the API
   refuses live keys. Pro analytics, team seat management, priority support and API access are
   listed on plans as **Coming soon**; seats are an entitlement number only (no member invites yet).
@@ -127,8 +130,22 @@ and moderation actions. Grant the first admin with SQL:
 
 Set `ANTHROPIC_API_KEY` for the worker. Without it nothing is published automatically: every
 upload waits in the moderation queue for a human. The prompt asks the model to tag only what is
-visible and states it is not judging ability. AI tags are stored with `source = 'ai'` and a
-confidence; player corrections are stored separately.
+visible and states it is not judging ability. AI tags are stored with `source = 'ai'`, a
+confidence and the model that produced them; player corrections are stored separately.
+
+Set `ANTHROPIC_API_KEY` for the API too to let natural-language scout search use the light model;
+without it the built-in English/Arabic rule parser answers. All calls go through `packages/ai`:
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `AI_MODEL_HEAVY` / `AI_EFFORT_HEAVY` | `claude-opus-5-5` / `high` | Video tagging and moderation (`AI_MODEL` / `AI_EFFORT` still work as fallbacks) |
+| `AI_MAX_TOKENS_HEAVY`, `AI_TIMEOUT_MS_HEAVY`, `AI_MAX_ATTEMPTS_HEAVY` | 16000, 300000, 3 | Budget, per-attempt timeout, attempts (exponential backoff with jitter) |
+| `AI_MODEL_LIGHT` / `AI_EFFORT_LIGHT` | `claude-haiku-5-5` / `low` | Natural-language query parsing |
+| `AI_MAX_TOKENS_LIGHT`, `AI_TIMEOUT_MS_LIGHT`, `AI_MAX_ATTEMPTS_LIGHT` | 2048, 10000, 2 | Same, light tier |
+| `AI_SERVER_FALLBACKS`, `AI_SERVER_FALLBACKS_LIGHT` | true, false | Server-side refusal fallbacks per tier |
+
+Every attempt is logged in `ai_calls` (task, model, tokens, latency, outcome, video/user); admins
+see totals in **Admin > AI usage** (`GET /v1/admin/ai/usage`).
 
 ### Promo / demo media
 
@@ -247,8 +264,9 @@ or child safety is priority 0.
 ## Roadmap
 
 - **Phase 1 (core)** and **Phase 2 (talent)**: built as described above.
-- **Phase 3 (intelligence)**: natural-language search to structured filters, personalised
-  recommendations with user controls, scout comparison, analytics dashboards.
+- **Phase 3 (intelligence)**: natural-language search to structured filters and personalised
+  recommendations with user controls are built as prototypes; scout comparison and analytics
+  dashboards remain.
 - **Phase 4 (scale)**: PWA / mobile app, organisations and clubs (seat invites), live payments
   after legal review of the subscription terms.
 

@@ -135,12 +135,13 @@ export const moderationRoutes = [
       ]);
       const orgMap = new Map(orgs.map((o) => [o.id, { id: o.id, name: o.name, type: o.type, verified: o.verified_at !== null, status: o.status }]));
       const videos = new Map((await toVideoViews(ctx.deps, me, videoRows)).map((v) => [v.id, v]));
+      const aiModels = new Map((videoIds.length ? await ctx.deps.db.selectFrom('videos').select(['id', 'ai_model']).where('id', 'in', videoIds).execute() : []).map((v) => [v.id, v.ai_model]));
       const commentMap = new Map(comments.map((c) => [c.id, c]));
       const copyright = await copyrightContext(ctx.deps.db, cases);
       return {
         items: cases.map((c) => ({
           id: c.id, targetKind: c.target_kind as never, targetId: c.target_id, source: c.source as never, categories: c.categories,
-          aiVerdict: c.ai_verdict ?? null, reportCount: c.report_count, priority: c.priority, status: c.status as never,
+          aiVerdict: c.ai_verdict ?? null, aiModel: aiModels.get(c.target_id) ?? null, reportCount: c.report_count, priority: c.priority, status: c.status as never,
           decision: c.decision, createdAt: c.created_at.toISOString(),
           video: videos.get(c.target_id) ?? null,
           comment: commentMap.has(c.target_id) ? { id: c.target_id, body: commentMap.get(c.target_id)!.body, authorHandle: commentMap.get(c.target_id)!.handle } : null,

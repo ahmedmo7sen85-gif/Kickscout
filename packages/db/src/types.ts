@@ -36,6 +36,24 @@ export interface AgeRecords {
   user_id: string;
 }
 
+export interface AiCalls {
+  attempt: Generated<number>;
+  created_at: Generated<Timestamp>;
+  effort: string;
+  error: string | null;
+  id: string;
+  input_tokens: Generated<number>;
+  latency_ms: number;
+  model: string;
+  outcome: string;
+  output_tokens: Generated<number>;
+  provider: string;
+  response_model: string | null;
+  task: string;
+  user_id: string | null;
+  video_id: string | null;
+}
+
 export interface AuditLogs {
   action: string;
   actor_id: string | null;
@@ -430,6 +448,21 @@ export interface RateLimitHits {
   reset_at: Timestamp;
 }
 
+export interface RecommendationPreferences {
+  history_reset_at: Timestamp | null;
+  personalize: Generated<boolean>;
+  updated_at: Generated<Timestamp>;
+  user_id: string;
+}
+
+export interface RecommendationSignals {
+  created_at: Generated<Timestamp>;
+  kind: Generated<string>;
+  target_id: string;
+  target_kind: string;
+  user_id: string;
+}
+
 export interface Regions {
   code: string;
   country_code: string | null;
@@ -578,6 +611,7 @@ export interface VideoHashtags {
 }
 
 export interface Videos {
+  ai_model: string | null;
   ai_summary: Json | null;
   context: string | null;
   created_at: Generated<Timestamp>;
@@ -618,6 +652,7 @@ export interface Videos {
 export interface VideoSkills {
   confidence: Numeric | null;
   created_at: Generated<Timestamp>;
+  model: string | null;
   skill_key: string;
   source: string;
   status: Generated<string>;
@@ -632,6 +667,7 @@ export interface VideoViews {
 
 export interface DB {
   age_records: AgeRecords;
+  ai_calls: AiCalls;
   audit_logs: AuditLogs;
   billing_customers: BillingCustomers;
   billing_events: BillingEvents;
@@ -669,6 +705,8 @@ export interface DB {
   privacy_settings: PrivacySettings;
   profiles: Profiles;
   rate_limit_hits: RateLimitHits;
+  recommendation_preferences: RecommendationPreferences;
+  recommendation_signals: RecommendationSignals;
   regions: Regions;
   reports: Reports;
   saved_search_hits: SavedSearchHits;

@@ -7,3 +7,5 @@ export * from './radar.js';
 export * from './notifications.js';
 export * from './orgs.js';
 export * from './entitlements.js';
+export * from './nl-query.js';
+export * from './recommendations.js';

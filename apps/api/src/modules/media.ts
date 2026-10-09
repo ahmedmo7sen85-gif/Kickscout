@@ -94,7 +94,7 @@ export async function toVideoViews(deps: Deps, viewer: Actor | null, rows: Video
     viewer ? db.selectFrom('likes').select('video_id').where('video_id', 'in', ids).where('user_id', '=', viewer.userId).execute() : Promise.resolve([]),
     viewer ? db.selectFrom('saves').select('video_id').where('video_id', 'in', ids).where('user_id', '=', viewer.userId).execute() : Promise.resolve([]),
     db.selectFrom('video_skills').innerJoin('skills', 'skills.key', 'video_skills.skill_key')
-      .select(['video_skills.video_id', 'video_skills.skill_key', 'video_skills.source', 'video_skills.confidence', 'skills.names', 'skills.sort_order'])
+      .select(['video_skills.video_id', 'video_skills.skill_key', 'video_skills.source', 'video_skills.confidence', 'video_skills.model', 'skills.names', 'skills.sort_order'])
       .where('video_skills.video_id', 'in', ids).where('video_skills.status', '=', 'active').execute(),
     db.selectFrom('video_hashtags').select(['video_id', 'tag']).where('video_id', 'in', ids).orderBy('tag').execute(),
   ]);
@@ -133,7 +133,9 @@ export async function toVideoViews(deps: Deps, viewer: Actor | null, rows: Video
       visibility: r.visibility as never,
       tags: [...bySkill.values()]
         .sort((a, b) => (a.source === b.source ? a.sort_order - b.sort_order : a.source === 'user' ? -1 : 1))
-        .map((t) => ({ skill: t.skill_key as never, name: t.names as { en: string; ar: string }, source: t.source as 'ai' | 'user', confidence: t.source === 'ai' && t.confidence !== null ? Number(t.confidence) : null })),
+        .map((t) => ({ skill: t.skill_key as never, name: t.names as { en: string; ar: string }, source: t.source as 'ai' | 'user', confidence: t.source === 'ai' && t.confidence !== null ? Number(t.confidence) : null,
+          // Which model suggested an AI tag: for the owner and staff (moderation views), not the public.
+          model: t.source === 'ai' && internals ? t.model : null })),
       hashtags: hashtags.filter((h) => h.video_id === r.id).map((h) => h.tag),
       playbackUrl: r.status === 'published' || (internals && r.playback_key) ? (r.playback_key ? mediaUrl(cdn, r.playback_key) : null) : null,
       thumbnailUrl: r.thumbnail_key ? mediaUrl(cdn, r.thumbnail_key) : null,

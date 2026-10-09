@@ -10,9 +10,12 @@ import { Tabs } from '@/components/ui/Tabs';
 import { FeedPlayer } from '@/components/video/FeedPlayer';
 import { api } from '@/lib/api';
 import { FEED_TABS } from '@/lib/constants';
+import { useToast } from '@/components/ui/Toast';
+import { useAuth } from '@/lib/auth';
+import { errorMessage } from '@/lib/errors';
 import { useI18n } from '@/lib/i18n/provider';
 import { useApi } from '@/lib/useApi';
-import type { FeedTab, VideoView } from '@/lib/types';
+import type { FeedTab, FeedWhy, VideoView } from '@/lib/types';
 
 export function FeedView() {
   return <Suspense fallback={<FeedSkeleton />}><FeedInner /></Suspense>;
@@ -39,17 +42,28 @@ function FeedInner() {
   const labels: Record<FeedTab, string> = { for_you: t.feed.forYou, following: t.feed.following, new_talent: t.feed.newTalent, trending: t.feed.trending };
 
   const page = useApi((s) => api.feed({ tab }, s), [tab]);
-  const [more, setMore] = useState<{ tab: FeedTab; items: VideoView[]; cursor: string | null } | null>(null);
+  const [more, setMore] = useState<{ tab: FeedTab; items: VideoView[]; cursor: string | null; why: Record<string, FeedWhy> } | null>(null);
   const loading = useRef(false);
+  const { me } = useAuth();
+  const toast = useToast();
+  const [hidden, setHidden] = useState<ReadonlySet<string>>(new Set());
 
-  const items = page.status === 'success' ? [...page.data.items, ...(more?.tab === tab ? more.items : [])] : [];
+  const items = page.status === 'success' ? [...page.data.items, ...(more?.tab === tab ? more.items : [])].filter((v) => !hidden.has(v.id)) : [];
+  const why = page.status === 'success' && tab === 'for_you' ? { ...page.data.why, ...(more?.tab === tab ? more.why : {}) } : undefined;
+  const notInterested = useCallback((videoId: string) => {
+    setHidden((h) => new Set(h).add(videoId));
+    api.notInterested(videoId).then(
+      () => toast.show(t.recommendations.notInterestedDone, { tone: 'success' }),
+      (e: unknown) => { setHidden((h) => { const n = new Set(h); n.delete(videoId); return n; }); toast.show(errorMessage(e, t), { tone: 'error' }); },
+    );
+  }, [t, toast]);
   const cursor = page.status === 'success' ? (more?.tab === tab ? more.cursor : page.data.nextCursor) : null;
 
   const loadMore = useCallback(() => {
     if (!cursor || loading.current) return;
     loading.current = true;
     api.feed({ tab, cursor }).then(
-      (p) => setMore((m) => ({ tab, items: [...(m?.tab === tab ? m.items : []), ...p.items], cursor: p.nextCursor })),
+      (p) => setMore((m) => ({ tab, items: [...(m?.tab === tab ? m.items : []), ...p.items], cursor: p.nextCursor, why: { ...(m?.tab === tab ? m.why : {}), ...p.why } })),
       () => {},
     ).finally(() => { loading.current = false; });
   }, [cursor, tab]);
@@ -83,7 +97,8 @@ function FeedInner() {
           </div>
         ) : null}
         {page.status === 'success' && page.data.capability.status === 'live' && items.length > 0 ? (
-          <FeedPlayer videos={items} onNearEnd={loadMore} hideFollow={tab === 'following'} />
+          <FeedPlayer videos={items} onNearEnd={loadMore} hideFollow={tab === 'following'} why={why}
+            onNotInterested={tab === 'for_you' && me ? notInterested : undefined} />
         ) : null}
       </div>
     </div>

@@ -26,8 +26,8 @@ describe('featured skills', () => {
   it('counts declared skills and player tags but ignores AI suggestions', () => {
     const v = (skill: VideoView['skill'], tags: VideoView['tags']) => ({ skill, tags }) as unknown as VideoView;
     const res = featuredSkills([
-      v('elastico', [{ skill: 'dribbling', name: { en: '', ar: '' }, source: 'user', confidence: null }]),
-      v('elastico', [{ skill: 'nutmeg', name: { en: '', ar: '' }, source: 'ai', confidence: 0.9 }]),
+      v('elastico', [{ skill: 'dribbling', name: { en: '', ar: '' }, source: 'user', confidence: null, model: null }]),
+      v('elastico', [{ skill: 'nutmeg', name: { en: '', ar: '' }, source: 'ai', confidence: 0.9, model: null }]),
     ]);
     expect(res).toEqual([{ skill: 'elastico', count: 2 }, { skill: 'dribbling', count: 1 }]);
   });

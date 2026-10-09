@@ -272,7 +272,7 @@ describe('upload and processing', () => {
     const id = await uploadedVideo(player.token);
     const v = await call('GET', `/v1/videos/${id}`, { token: player.token });
     expect(v.body).toMatchObject({ status: 'processing', playbackUrl: null, skill: 'elastico', hashtags: ['cairo', 'skills'] });
-    expect(v.body.tags).toEqual([{ skill: 'elastico', name: { en: 'Elastico', ar: 'إلاستيكو' }, source: 'user', confidence: null }]);
+    expect(v.body.tags).toEqual([{ skill: 'elastico', name: { en: 'Elastico', ar: 'إلاستيكو' }, source: 'user', confidence: null, model: null }]);
     const job = await env.db.selectFrom('jobs').selectAll().where(sql`payload->>'videoId'`, '=', id).executeTakeFirstOrThrow();
     expect(job).toMatchObject({ kind: 'video.process', status: 'queued' });
     expect((await call('POST', `/v1/uploads/${id}/complete`, { token: player.token })).body.code).toBe('ALREADY_COMPLETED');
@@ -297,8 +297,8 @@ describe('upload and processing', () => {
     const id = await publishedVideo(player.token);
     const before = (await call('GET', `/v1/videos/${id}`)).body;
     expect(before.tags).toEqual([
-      { skill: 'elastico', name: { en: 'Elastico', ar: 'إلاستيكو' }, source: 'user', confidence: null },
-      { skill: 'dribbling', name: { en: 'Dribbling', ar: 'المراوغة' }, source: 'ai', confidence: 0.64 },
+      { skill: 'elastico', name: { en: 'Elastico', ar: 'إلاستيكو' }, source: 'user', confidence: null, model: null },
+      { skill: 'dribbling', name: { en: 'Dribbling', ar: 'المراوغة' }, source: 'ai', confidence: 0.64, model: null },
     ]);
     expect(before.moderation).toBeNull();
     const other = await newUser('tag-thief', 'tag_thief');

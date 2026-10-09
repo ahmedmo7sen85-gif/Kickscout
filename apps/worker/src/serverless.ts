@@ -2,7 +2,7 @@ import { timingSafeEqual } from 'node:crypto';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { createDb } from '@fp/db';
 import type { Database } from '@fp/db';
-import { ClaudeVideoAnalyzer } from './analyzer/claude.js';
+import { createVideoAnalyzer } from './analyzer/factory.js';
 import { loadConfig } from './config.js';
 import type { Config } from './config.js';
 import { runMaintenance } from './maintenance.js';
@@ -48,9 +48,7 @@ function getRuntime(): Runtime {
     originalsBucket: config.S3_BUCKET_ORIGINALS,
     deliveryBucket: config.S3_BUCKET_DELIVERY,
   });
-  const analyzer = config.ANTHROPIC_API_KEY
-    ? ClaudeVideoAnalyzer.fromApiKey(config.ANTHROPIC_API_KEY, { model: config.AI_MODEL, effort: config.AI_EFFORT, serverFallbacks: config.AI_SERVER_FALLBACKS })
-    : null;
+  const analyzer = createVideoAnalyzer(config.ANTHROPIC_API_KEY, db, log);
   const worker = new Worker(
     { db, storage, analyzer, media: { ffmpeg: config.FFMPEG_PATH, ffprobe: config.FFPROBE_PATH }, maxOriginalBytes: config.MAX_ORIGINAL_BYTES, workDir: config.WORK_DIR, log },
     { concurrency: 1, jobTimeoutMs: config.JOB_TIMEOUT_MS, pollIntervalMs: config.JOB_POLL_INTERVAL_MS, retryBaseMs: config.JOB_RETRY_BASE_MS },

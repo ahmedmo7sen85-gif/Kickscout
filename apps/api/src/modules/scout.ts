@@ -2,10 +2,13 @@ import { z } from 'zod';
 import { sql } from 'kysely';
 import {
   ContactRequestCreate, ContactRequestList, ContactResponseRequest, CreateScoutNoteRequest, CreateShortlistRequest, MarkReadRequest,
-  CursorQuery, NotificationPage, PlayerPage, ScoutNoteList, ScoutNoteView, ScoutSearchQuery, ShortlistDetail, ShortlistList, ShortlistView,
+  CursorQuery, NlScoutSearchRequest, NlScoutSearchResponse, NotificationPage, PlayerPage, ScoutNoteList, ScoutNoteView, ScoutSearchQuery, ShortlistDetail, ShortlistList, ShortlistView,
   VerificationRequestCreate, VerificationRequestView,
 } from '@fp/contracts';
-import { isMinor } from '@fp/domain';
+import { describeScoutFilters, isMinor } from '@fp/domain';
+import type { Actor } from '@fp/domain';
+import { parseNlQuery } from '../platform/nl-search.js';
+import type { ScoutFilters } from '../platform/nl-search.js';
 import type { Deps } from '../deps.js';
 import { route } from '../platform/route.js';
 import { ApiError, conflict, forbidden, notFound } from '../platform/errors.js';
@@ -52,32 +55,32 @@ export const scoutRoutes = [
       ctx.authorize({ kind: 'scout.use' });
       const f = ctx.query;
       // A search counts once against the plan's monthly quota; loading more pages of it does not.
-      if (!f.cursor) {
-        const me = ctx.me();
-        const { limits } = await entitlementsFor(ctx.deps, me.userId, me.roles);
-        await consumeScoutSearch(ctx.deps, me.userId, limits);
-      }
-      let q = filterPlayers(discoverablePlayers(ctx.deps, ctx.actor), f)
-        .innerJoin('age_records', 'age_records.user_id', 'users.id')
-        .select(['users.id', 'profiles.handle']);
-      // A hidden age group cannot be found by filtering on it either.
-      if (f.ageGroup) q = q.where('age_records.age_band', '=', f.ageGroup).where('privacy_settings.show_age', '=', true);
-      if (f.verifiedOnly) q = q.where('profiles.verified_at', 'is not', null);
-      if (f.minFollowers) {
-        q = q.where((eb) => eb(eb.selectFrom('follows').select(eb.fn.countAll().as('n')).whereRef('followee_id', '=', 'users.id'), '>=', f.minFollowers!));
-      }
-      if (f.cursor) {
-        // Cursor over handle order; the timestamp half is unused here.
-        const c = decodeCursor(f.cursor);
-        q = q.where(sql<boolean>`(profiles.handle::text, users.id) > (${c.id.length ? (await handleOf(ctx.deps, c.id)) : ''}, ${c.id}::uuid)`);
-      }
-      const rows = await q.orderBy(sql`profiles.handle::text`).orderBy('users.id').limit(f.limit + 1).execute();
-      const page = rows.slice(0, f.limit);
-      const last = page.at(-1);
-      await ctx.deps.db.transaction().execute((tx) => audit(tx, { actorId: ctx.me().userId, action: 'scout.search', metadata: { filters: { ...f, cursor: undefined } } }));
+      if (!f.cursor) await chargeScoutSearch(ctx.deps, ctx.me());
+      const { cursor: _c, limit: _l, ...filters } = f;
+      return searchPlayers(ctx.deps, ctx.me(), filters, { limit: f.limit, cursor: f.cursor });
+    },
+  ),
+
+  route(
+    {
+      method: 'post', path: '/v1/scout/search/nl', summary: 'Natural-language scout search: free text (English or Arabic) to filters, then the normal search',
+      tag: 'scout', auth: 'user', body: NlScoutSearchRequest, response: NlScoutSearchResponse, rateLimit: { max: 30, timeWindow: '1 minute' },
+    },
+    async (ctx) => {
+      // TODO(phase E1): gate on the `nl_scout_search` feature flag; NL_SCOUT_SEARCH is the switch until then.
+      if (ctx.deps.config.NL_SCOUT_SEARCH !== 'on') throw new ApiError(503, 'FEATURE_DISABLED', 'natural-language search is not switched on yet');
+      ctx.authorize({ kind: 'scout.use' });
+      const me = ctx.me();
+      // One natural-language search is one search against the quota, charged before any AI call.
+      await chargeScoutSearch(ctx.deps, me);
+      const parsed = await parseNlQuery(ctx.deps, me.userId, ctx.body.query, ctx.req.log);
+      const names = await skillNameLookup(ctx.deps);
       return {
-        items: await playerCards(ctx.deps, ctx.actor, page.map((r) => r.id)),
-        nextCursor: rows.length > f.limit && last ? encodeCursor(new Date(0), last.id) : null,
+        filters: parsed.filters,
+        parser: parsed.parser,
+        model: parsed.model,
+        explanation: describeScoutFilters(parsed.filters, names),
+        results: await searchPlayers(ctx.deps, me, parsed.filters, { limit: ctx.body.limit }, { nl: true, parser: parsed.parser }),
       };
     },
   ),
@@ -301,6 +304,46 @@ export const scoutRoutes = [
     },
   ),
 ];
+
+async function chargeScoutSearch(deps: Deps, me: Actor) {
+  const { limits } = await entitlementsFor(deps, me.userId, me.roles);
+  await consumeScoutSearch(deps, me.userId, limits);
+}
+
+async function skillNameLookup(deps: Deps) {
+  const rows = await deps.db.selectFrom('skills').select(['key', 'names']).execute();
+  const map = new Map(rows.map((r) => [r.key, r.names as { en: string; ar: string }]));
+  return (key: string) => map.get(key) ?? { en: key, ar: key };
+}
+
+/**
+ * The scout search itself, shared by the filter form and natural-language search: discoverable
+ * players only (public, discovery on, not blocked), country and age group only where shown.
+ */
+export async function searchPlayers(deps: Deps, actor: Actor, f: ScoutFilters, page: { limit: number; cursor?: string | undefined }, auditExtra: Record<string, unknown> = {}) {
+  let q = filterPlayers(discoverablePlayers(deps, actor), f)
+    .innerJoin('age_records', 'age_records.user_id', 'users.id')
+    .select(['users.id', 'profiles.handle']);
+  // A hidden age group cannot be found by filtering on it either.
+  if (f.ageGroup) q = q.where('age_records.age_band', '=', f.ageGroup).where('privacy_settings.show_age', '=', true);
+  if (f.verifiedOnly) q = q.where('profiles.verified_at', 'is not', null);
+  if (f.minFollowers) {
+    q = q.where((eb) => eb(eb.selectFrom('follows').select(eb.fn.countAll().as('n')).whereRef('followee_id', '=', 'users.id'), '>=', f.minFollowers!));
+  }
+  if (page.cursor) {
+    // Cursor over handle order; the timestamp half is unused here.
+    const c = decodeCursor(page.cursor);
+    q = q.where(sql<boolean>`(profiles.handle::text, users.id) > (${c.id.length ? (await handleOf(deps, c.id)) : ''}, ${c.id}::uuid)`);
+  }
+  const rows = await q.orderBy(sql`profiles.handle::text`).orderBy('users.id').limit(page.limit + 1).execute();
+  const items = rows.slice(0, page.limit);
+  const last = items.at(-1);
+  await deps.db.transaction().execute((tx) => audit(tx, { actorId: actor.userId, action: 'scout.search', metadata: { filters: f, ...auditExtra } }));
+  return {
+    items: await playerCards(deps, actor, items.map((r) => r.id)),
+    nextCursor: rows.length > page.limit && last ? encodeCursor(new Date(0), last.id) : null,
+  };
+}
 
 async function handleOf(deps: Deps, userId: string) {
   return (await deps.db.selectFrom('profiles').select('handle').where('user_id', '=', userId).executeTakeFirst())?.handle ?? '';
