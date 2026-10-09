@@ -5,6 +5,13 @@ import type { CapabilityKey } from '@fp/domain';
 import { route } from '../platform/route.js';
 import { ApiError } from '../platform/errors.js';
 import { discoverable, pageOfVideos, toVideoViews, videoQuery } from './media.js';
+import { personalizationAvailable, personalizedForYou, plainWhy, recommendationPrefs } from './recommendations.js';
+
+function decodeOffset(cursor: string | undefined): number {
+  const offset = cursor ? Number.parseInt(Buffer.from(cursor, 'base64url').toString('utf8'), 10) : 0;
+  if (!Number.isInteger(offset) || offset < 0 || offset > 1000) throw new ApiError(400, 'INVALID_CURSOR', 'cursor is invalid');
+  return offset;
+}
 
 const TAB_CAPABILITY: Record<string, CapabilityKey> = {
   for_you: 'feed.for_you',
@@ -38,10 +45,13 @@ export const feedRoutes = [
           .where('users.created_at', '>', sql<Date>`now() - make_interval(days => ${NEW_TALENT_MAX_ACCOUNT_DAYS})`)
           .where((eb) => eb(eb.selectFrom('follows').select(eb.fn.countAll().as('n')).whereRef('followee_id', '=', 'videos.owner_user_id'), '<', NEW_TALENT_MAX_FOLLOWERS));
       }
+      if (tab === 'for_you' && viewer && personalizationAvailable(ctx.deps) && (await recommendationPrefs(ctx.deps, viewer.userId)).personalize) {
+        // TODO(phase E1): also gate on the `for_you_personalization` feature flag once it exists.
+        return { tab, capability: cap, personalized: true, ...(await personalizedForYou(ctx.deps, viewer, { limit, cursor }, decodeOffset)) };
+      }
       if (tab === 'trending') {
         // Engagement in the last week (likes count double views, saves triple). Offset paging: the order shifts as counts change.
-        const offset = cursor ? Number.parseInt(Buffer.from(cursor, 'base64url').toString('utf8'), 10) : 0;
-        if (!Number.isInteger(offset) || offset < 0 || offset > 1000) throw new ApiError(400, 'INVALID_CURSOR', 'cursor is invalid');
+        const offset = decodeOffset(cursor);
         const since = sql<Date>`now() - make_interval(days => ${TRENDING_WINDOW_DAYS})`;
         const score = sql<number>`(
           2 * (SELECT count(*) FROM likes l WHERE l.video_id = videos.id AND l.created_at > ${since})
@@ -54,7 +64,9 @@ export const feedRoutes = [
           nextCursor: rows.length > limit ? Buffer.from(String(offset + limit)).toString('base64url') : null,
         };
       }
-      return { tab, capability: cap, ...(await pageOfVideos(ctx.deps, viewer, q, { limit, cursor })) };
+      const page = await pageOfVideos(ctx.deps, viewer, q, { limit, cursor });
+      // For You without personalisation is newest first; each item still says so.
+      return { tab, capability: cap, ...page, ...(tab === 'for_you' ? { personalized: false, why: plainWhy(page.items) } : {}) };
     },
   ),
 ];

@@ -17,7 +17,9 @@ export const SKILL_KEYS = [
 ] as const satisfies readonly SkillKey[];
 export const AGE_BANDS = ['u13', 'u16', 'u18', 'adult'] as const satisfies readonly AgeBand[];
 export const FEED_TABS = ['for_you', 'following', 'new_talent', 'trending'] as const satisfies readonly FeedTab[];
-export const RADAR_CATEGORIES = ['rising', 'most_watched', 'most_saved', 'new_talents', 'hidden_gems'] as const satisfies readonly RadarCategory[];
+export const RADAR_CATEGORIES = [
+  'rising', 'most_watched', 'most_saved', 'new_talents', 'hidden_gems', 'most_improved', 'top_by_skill', 'new_to_platform', 'regional_standouts',
+] as const satisfies readonly RadarCategory[];
 export const REPORT_REASONS = ['spam', 'harassment', 'hate', 'sexual', 'violence', 'dangerous', 'child_safety', 'impersonation',
   'copyright', 'stolen_video', 'scam', 'not_football', 'fake_scout', 'inappropriate_contact', 'other'] as const satisfies readonly ReportReason[];
 export const VIDEO_CONTENT_TYPES = ['video/mp4', 'video/quicktime', 'video/webm'] as const satisfies readonly VideoContentType[];

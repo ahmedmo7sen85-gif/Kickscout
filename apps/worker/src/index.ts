@@ -1,5 +1,6 @@
 export * from './analyzer/types.js';
 export * from './analyzer/claude.js';
+export * from './analyzer/factory.js';
 export * from './config.js';
 export * from './decision.js';
 export * from './errors.js';

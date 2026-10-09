@@ -4,6 +4,8 @@ import { AnalyzerRetryableError, ClaudeVideoAnalyzer, OUTPUT_SCHEMA, SYSTEM_PROM
 import type { CreateMessage } from '../src/analyzer/claude.js';
 import type { AnalysisInput } from '../src/analyzer/types.js';
 import { PermanentJobError } from '../src/errors.js';
+import { AnalysisSchema } from '../src/analyzer/types.js';
+import { AiTransientError } from '@fp/ai';
 import { SAFE } from './helpers.js';
 
 type BetaMessage = Anthropic.Beta.Messages.BetaMessage;
@@ -143,7 +145,19 @@ describe('ClaudeVideoAnalyzer response handling', () => {
     await expect(stub(badRequest).analyzer.analyze(input)).rejects.toBeInstanceOf(PermanentJobError);
     const limited = new Anthropic.RateLimitError(429, { type: 'error', error: { type: 'rate_limit_error', message: 'slow down' } }, 'slow down', headers);
     const err = await stub(limited).analyzer.analyze(input).catch((e: unknown) => e);
-    expect(err).toBeInstanceOf(Anthropic.RateLimitError);
+    // Retried by the job queue (the provider keeps the SDK error as the cause).
+    expect(err).toBeInstanceOf(AiTransientError);
+    expect((err as Error).cause).toBe(limited);
     expect(err).not.toBeInstanceOf(PermanentJobError);
+  });
+
+  it('refuses output carrying a rating or potential field instead of storing it', async () => {
+    for (const bad of [{ ...SAFE, rating: 7 }, { ...SAFE, moderation: { ...SAFE.moderation, playerPotential: 'high' } }, { ...SAFE, skills: [{ key: 'juggling', confidence: 0.9, score: 8 }] }]) {
+      const err = await stub(message({ stop_reason: 'end_turn', content: [text(JSON.stringify(bad))] })).analyzer.analyze(input).catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(AnalyzerRetryableError);
+      expect((err as Error).message).toMatch(/never rate/);
+    }
+    // And the analysis schema itself refuses unknown keys rather than silently stripping them.
+    expect(AnalysisSchema.safeParse({ ...SAFE, potential: 'pro' }).success).toBe(false);
   });
 });

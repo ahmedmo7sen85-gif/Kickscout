@@ -20,6 +20,7 @@
     "@fastify/cors": "^11.3.0",
     "@fastify/helmet": "^13.0.0",
     "@fastify/rate-limit": "^10.3.0",
+    "@fp/ai": "workspace:*",
     "@fp/contracts": "workspace:*",
     "@fp/db": "workspace:*",
     "@fp/domain": "workspace:*",

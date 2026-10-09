@@ -1,5 +1,5 @@
 import { createDb } from '@fp/db';
-import { ClaudeVideoAnalyzer } from './analyzer/claude.js';
+import { createVideoAnalyzer } from './analyzer/factory.js';
 import { loadConfig } from './config.js';
 import type { Logger } from './pipeline.js';
 import { S3VideoStorage } from './storage/s3.js';
@@ -26,9 +26,7 @@ const storage = new S3VideoStorage({
   deliveryBucket: config.S3_BUCKET_DELIVERY,
 });
 
-const analyzer = config.ANTHROPIC_API_KEY
-  ? ClaudeVideoAnalyzer.fromApiKey(config.ANTHROPIC_API_KEY, { model: config.AI_MODEL, effort: config.AI_EFFORT, serverFallbacks: config.AI_SERVER_FALLBACKS })
-  : null;
+const analyzer = createVideoAnalyzer(config.ANTHROPIC_API_KEY, db, log);
 if (!analyzer) log.warn('ANTHROPIC_API_KEY is not set: every video will wait for human review');
 
 const worker = new Worker(

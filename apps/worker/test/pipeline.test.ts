@@ -11,6 +11,8 @@ import {
   seedUser, seedVideo,
 } from './helpers.js';
 import type { Clips, Env, TestDb } from './helpers.js';
+import { AiRouter, FakeAiProvider, dbCallRecorder, fakeResponse, routingFromEnv } from '@fp/ai';
+import { AiVideoAnalyzer } from '../src/analyzer/claude.js';
 
 let tdb: TestDb;
 let env: Env;
@@ -322,5 +324,49 @@ describe('video.process', () => {
     await drain(new FakeAnalyzer(() => { throw new PermanentJobError('boom'); }));
     const after = (await readdir(os.tmpdir())).filter((f) => f.startsWith('video-'));
     expect(after.sort()).toEqual(before.sort());
+  });
+});
+
+describe('AI routing in the pipeline', () => {
+  it('routes analysis to the heavy model, records the call in ai_calls and stores the model on every AI tag', async () => {
+    const owner = await seedUser(env.db);
+    const { videoId } = await seedVideo(env, { owner, clip: clips.valid });
+    const provider = new FakeAiProvider(fakeResponse({ text: JSON.stringify(SAFE), model: 'claude-opus-5-5', usage: { inputTokens: 5120, outputTokens: 380 } }));
+    const router = new AiRouter(provider, routingFromEnv({}), { recorder: dbCallRecorder(env.db, uuidv7) });
+    await drain(new AiVideoAnalyzer(router));
+
+    expect(provider.requests[0]).toMatchObject({ model: 'claude-opus-5-5', effort: 'high', maxTokens: 16_000, serverFallbacks: true });
+    expect(provider.requests[0]!.content.filter((c) => c.type === 'image')).toHaveLength(6);
+    const v = await getVideo(env.db, videoId);
+    expect(v.status).toBe('published');
+    expect(v.ai_model).toBe('claude-opus-5-5');
+    const tags = await env.db.selectFrom('video_skills').select(['skill_key', 'model']).where('video_id', '=', videoId).orderBy('skill_key').execute();
+    expect(tags).toEqual([{ skill_key: 'ball_control', model: 'claude-opus-5-5' }, { skill_key: 'juggling', model: 'claude-opus-5-5' }]);
+    const calls = await env.db.selectFrom('ai_calls').selectAll().where('video_id', '=', videoId).execute();
+    expect(calls).toEqual([expect.objectContaining({
+      task: 'video_analysis', provider: 'fake', model: 'claude-opus-5-5', response_model: 'claude-opus-5-5', effort: 'high',
+      input_tokens: 5120, output_tokens: 380, outcome: 'ok', attempt: 1, user_id: owner, error: null,
+    })]);
+  });
+
+  it('never stores a rating: AI output with one is refused and the video waits for a human after retries', async () => {
+    const owner = await seedUser(env.db);
+    const { videoId, jobId } = await seedVideo(env, { owner, clip: clips.valid });
+    const provider = FakeAiProvider.json({ ...SAFE, potential: 'pro level', rating: 9 });
+    const router = new AiRouter(provider, routingFromEnv({}), { recorder: dbCallRecorder(env.db, uuidv7) });
+    await drain(new AiVideoAnalyzer(router));
+    const v = await getVideo(env.db, videoId);
+    expect(v.status).not.toBe('published');
+    expect(JSON.stringify(v.ai_summary ?? {})).not.toMatch(/rating|potential/);
+    expect((await getJob(env.db, jobId)).last_error).toMatch(/never rate/);
+    const outcomes = await env.db.selectFrom('ai_calls').select('outcome').where('video_id', '=', videoId).execute();
+    expect(outcomes.map((o) => o.outcome)).toContain('invalid_output');
+  });
+
+  it('the database refuses AI JSON with a rating-like key', async () => {
+    const owner = await seedUser(env.db);
+    const { videoId } = await seedVideo(env, { owner, clip: clips.valid });
+    await expect(env.db.updateTable('videos').set({ ai_summary: JSON.stringify({ available: true, result: { overallScore: 7 } }) }).where('id', '=', videoId).execute())
+      .rejects.toThrow(/videos_ai_summary_no_ratings/);
   });
 });

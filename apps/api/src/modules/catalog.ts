@@ -72,7 +72,7 @@ async function radarStats(deps: Deps, viewer: Actor | null, f: z.output<typeof R
   const candidates = filterPlayers(discoverablePlayers(deps, viewer), f).select('users.id');
   const rows = await sql<{
     id: string; likes7d: string; likes_prev: string; views7d: string; views_prev: string; new_followers: string; followers: string;
-    age_days: number; entries7d: string; saves7d: string; top_skill: string | null; top_skill_videos: string | null;
+    age_days: number; entries7d: string; saves7d: string; top_skill: string | null; top_skill_videos: string | null; country: string | null;
   }>`
     WITH c AS (${candidates}),
     pv AS (SELECT v.id, v.owner_user_id FROM videos v JOIN c ON c.id = v.owner_user_id
@@ -91,7 +91,11 @@ async function radarStats(deps: Deps, viewer: Actor | null, f: z.output<typeof R
       (SELECT extract(day FROM now() - u.created_at)::int FROM users u WHERE u.id = c.id) AS age_days,
       (SELECT count(*) FROM saves sv JOIN pv ON pv.id = sv.video_id WHERE pv.owner_user_id = c.id AND sv.created_at > now() - interval '7 days') AS saves7d,
       (SELECT count(*) FROM challenge_entries ce JOIN pv ON pv.id = ce.video_id WHERE pv.owner_user_id = c.id AND ce.created_at > now() - interval '7 days') AS entries7d,
-      top.skill_key AS top_skill, top.n AS top_skill_videos
+      top.skill_key AS top_skill, top.n AS top_skill_videos,
+      -- Country only where the player shows it (regional standouts never reveal a hidden country).
+      (SELECT CASE WHEN ps.show_country AND ps.region_precision <> 'macro' THEN r.country_code END
+         FROM profiles p JOIN privacy_settings ps ON ps.user_id = p.user_id LEFT JOIN regions r ON r.id = p.region_id
+        WHERE p.user_id = c.id) AS country
     FROM c LEFT JOIN top ON top.owner_user_id = c.id
     WHERE EXISTS (SELECT 1 FROM pv WHERE pv.owner_user_id = c.id)
   `.execute(deps.db);
@@ -99,6 +103,7 @@ async function radarStats(deps: Deps, viewer: Actor | null, f: z.output<typeof R
     playerId: r.id, likes7d: Number(r.likes7d), likesPrev7d: Number(r.likes_prev), views7d: Number(r.views7d), viewsPrev7d: Number(r.views_prev),
     newFollowers7d: Number(r.new_followers), followers: Number(r.followers), accountAgeDays: r.age_days, challengeEntries7d: Number(r.entries7d), saves7d: Number(r.saves7d),
     topSkill: r.top_skill ? { key: r.top_skill, videos: Number(r.top_skill_videos) } : null,
+    country: r.country?.trim() ?? null,
   }));
 }
 

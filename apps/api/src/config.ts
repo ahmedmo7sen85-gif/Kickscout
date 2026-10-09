@@ -51,6 +51,17 @@ const Env = z
      */
     STRIPE_SECRET_KEY: unsetIfEmpty(z.string().regex(/^(sk|rk)_test_\w+$/, 'only Stripe test-mode keys (sk_test_ / rk_test_) are accepted').optional()),
     STRIPE_WEBHOOK_SECRET: unsetIfEmpty(z.string().regex(/^whsec_\w+$/, 'must be a Stripe webhook signing secret (whsec_...)').optional()),
+    /**
+     * AI for the API's light tasks (natural-language scout search). Never sent to the browser. Without
+     * it the API uses the rule-based parser. Model routing comes from the AI_* variables (see @fp/ai).
+     */
+    ANTHROPIC_API_KEY: unsetIfEmpty(z.string().min(1).optional()),
+    /**
+     * Feature switches. TODO(phase E1): read these from the feature-flag system (flags
+     * `nl_scout_search` and `for_you_personalization`) once it lands; the env value stays the default.
+     */
+    NL_SCOUT_SEARCH: z.enum(['on', 'off']).default('off'),
+    FOR_YOU_PERSONALIZATION: z.enum(['on', 'off']).default('off'),
   })
   .refine((e) => Boolean(e.STRIPE_SECRET_KEY) === Boolean(e.STRIPE_WEBHOOK_SECRET), {
     message: 'set STRIPE_SECRET_KEY and STRIPE_WEBHOOK_SECRET together (payments cannot be confirmed without the webhook secret)',

@@ -3,6 +3,7 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { AuthGate } from '@/components/AuthGate';
 import { BillingSummary } from '@/components/billing/BillingSummary';
+import { RecommendationSettings } from '@/components/feed/Recommendations';
 import { LocaleSwitch } from '@/components/nav/LocaleSwitch';
 import { PageHead } from '@/components/PageHead';
 import { Button } from '@/components/ui/Button';
@@ -44,6 +45,7 @@ function Sections() {
       <Verification me={me} onSent={refreshMe} />
       <ContactRequests />
       <NotificationPrefs />
+      <RecommendationSettings />
       <Billing roles={me.roles} />
       <section className="card" aria-labelledby="s-lang">
         <h2 className="section-title" id="s-lang">{t.settings.languageSection}</h2>

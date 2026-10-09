@@ -41,3 +41,54 @@ describe('Talent Radar', () => {
     expect(saved[0]?.reasons[0]).toEqual({ code: 'most_saved', saves: 50 });
   });
 });
+
+describe('Talent Radar: more categories, still reasons-based', () => {
+  const p = (playerId: string, extra: Partial<RadarStats>) => ({ ...base, playerId, ...extra });
+
+  it('most improved needs a real base last week and shows the growth', () => {
+    const climber = p('climber', { likes7d: 12, likesPrev7d: 4 });
+    const fromZero = p('fromZero', { likes7d: 9, likesPrev7d: 0 });
+    const flat = p('flat', { likes7d: 50, likesPrev7d: 48 });
+    const r = rankRadar([climber, fromZero, flat], 10, 'most_improved');
+    expect(r.map((e) => e.playerId)).toEqual(['climber']);
+    expect(r[0]!.reasons[0]).toEqual({ code: 'engagement_improved', percent: 200 });
+  });
+
+  it('top by skill ranks players whose recent clips focus on one skill, with engagement behind them', () => {
+    const focused = p('focused', { topSkill: { key: 'nutmeg', videos: 4 }, likes7d: 3 });
+    const idle = p('idle', { topSkill: { key: 'nutmeg', videos: 6 } });
+    const r = rankRadar([focused, idle], 10, 'top_by_skill');
+    expect(r.map((e) => e.playerId)).toEqual(['focused']);
+    expect(r[0]!.reasons[0]).toEqual({ code: 'skill_leader', skill: 'nutmeg', videos: 4 });
+  });
+
+  it('new to platform: joined in the last 30 days and already noticed', () => {
+    const fresh = p('fresh', { accountAgeDays: 6, likes7d: 4 });
+    const older = p('older', { accountAgeDays: 60, likes7d: 40, likesPrev7d: 2 });
+    const unseen = p('unseen', { accountAgeDays: 3 });
+    const r = rankRadar([fresh, older, unseen], 10, 'new_to_platform');
+    expect(r.map((e) => e.playerId)).toEqual(['fresh']);
+    expect(r[0]!.reasons[0]).toEqual({ code: 'joined_recently', days: 6 });
+  });
+
+  it('regional standouts takes the top few per country and never a player who hides their country', () => {
+    const mk = (id: string, country: string | null, likes: number) => p(id, { country, likes7d: likes, likesPrev7d: 1 });
+    const stats = [mk('eg1', 'EG', 50), mk('eg2', 'EG', 40), mk('eg3', 'EG', 30), mk('eg4', 'EG', 20), mk('sa1', 'SA', 10), mk('hidden', null, 99)];
+    const r = rankRadar(stats, 20, 'regional_standouts');
+    expect(r.map((e) => e.playerId).sort()).toEqual(['eg1', 'eg2', 'eg3', 'sa1']);
+    expect(r.find((e) => e.playerId === 'sa1')!.reasons[0]).toEqual({ code: 'regional_standout', country: 'SA' });
+  });
+
+  it('describes every new reason in both languages', () => {
+    const name = () => ({ en: 'Nutmeg', ar: 'الكوبري' });
+    for (const r of [
+      { code: 'engagement_improved', percent: 80 }, { code: 'skill_leader', skill: 'nutmeg', videos: 3 },
+      { code: 'joined_recently', days: 4 }, { code: 'regional_standout', country: 'EG' },
+    ] as const) {
+      const t = describeReason(r, name);
+      expect(t.en.length).toBeGreaterThan(5);
+      expect(t.ar).toMatch(/[؀-ۿ]/);
+      expect(`${t.en} ${t.ar}`).not.toMatch(/rating|potential|score/i);
+    }
+  });
+});

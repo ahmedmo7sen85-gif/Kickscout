@@ -18,6 +18,7 @@ export const KNOWN_ERROR_CODES = [
   'OWNER_MUST_TRANSFER', 'ADULTS_ONLY',
   'BILLING_NOT_CONFIGURED', 'ALREADY_SUBSCRIBED', 'CONTACT_SALES', 'PLAN_NOT_PURCHASABLE', 'PRICE_NOT_AVAILABLE', 'COUPON_INVALID',
   'COUPON_NOT_AVAILABLE', 'NO_BILLING_ACCOUNT', 'QUOTA_SCOUT_SEARCHES', 'QUOTA_SHORTLIST_SLOTS', 'QUOTA_ACTIVE_VIDEOS', 'QUOTA_DAILY_UPLOADS',
+  'FEATURE_DISABLED',
 ] as const;
 export type KnownErrorCode = (typeof KNOWN_ERROR_CODES)[number];
 
@@ -177,6 +178,7 @@ export function createApiClient(opts: ApiClientOptions = {}) {
 
     // scouts
     scoutPlayers: (q: T.ScoutSearchQuery, s?: AbortSignal) => get<T.PlayerPage>('/v1/scout/players', q as Query, s),
+    scoutSearchNl: (b: T.NlScoutSearchRequest) => send<T.NlScoutSearchResponse>('POST', '/v1/scout/search/nl', b),
     shortlists: (s?: AbortSignal) => get<T.ShortlistList>('/v1/scout/shortlists', undefined, s),
     createShortlist: (b: T.CreateShortlistRequest) => send<T.ShortlistView>('POST', '/v1/scout/shortlists', b),
     shortlist: (id: string, s?: AbortSignal) => get<T.ShortlistDetail>(`/v1/scout/shortlists/${e(id)}`, undefined, s),
@@ -194,6 +196,11 @@ export function createApiClient(opts: ApiClientOptions = {}) {
     // privacy, notifications preferences, account
     privacy: (userId: string, s?: AbortSignal) => get<T.PrivacySettingsView>(`/v1/users/${e(userId)}/privacy`, undefined, s),
     updatePrivacy: (userId: string, b: T.UpdatePrivacyRequest) => send<T.PrivacySettingsView>('PATCH', `/v1/users/${e(userId)}/privacy`, b),
+    recommendations: (s?: AbortSignal) => get<T.RecommendationSettingsView>('/v1/me/recommendations', undefined, s),
+    updateRecommendations: (b: T.UpdateRecommendationSettingsRequest) => send<T.RecommendationSettingsView>('PATCH', '/v1/me/recommendations', b),
+    resetRecommendations: () => send<T.RecommendationSettingsView>('POST', '/v1/me/recommendations/reset'),
+    notInterested: (videoId: string) => send<void>('POST', `/v1/videos/${e(videoId)}/not-interested`),
+    aiUsage: (s?: AbortSignal) => get<T.AiUsageView>('/v1/admin/ai/usage', undefined, s),
     notificationPreferences: (s?: AbortSignal) => get<T.NotificationPreferencesView>('/v1/me/notification-preferences', undefined, s),
     updateNotificationPreferences: (b: T.UpdateNotificationPreferencesRequest) => send<T.NotificationPreferencesView>('PATCH', '/v1/me/notification-preferences', b),
     exportMyData: () => get<T.AccountExport>('/v1/me/export'),

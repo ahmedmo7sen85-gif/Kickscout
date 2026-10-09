@@ -18,6 +18,7 @@ import { removeFromOrganizations } from './orgs.js';
 import { cancelAtProvider, closeSubscriptionsForDeletion } from '../platform/billing/cancellations.js';
 import { entitlementsFor } from '../platform/entitlements.js';
 import type { FastifyBaseLogger } from 'fastify';
+import { eraseRecommendationData, recommendationExport } from './recommendations.js';
 
 const Uuid = z.uuid();
 
@@ -92,6 +93,7 @@ async function deleteAccount(tx: Transaction<DB>, subjectId: string, actorId: st
   // Organizations and pipelines: leave every organization (ownership passes on), and drop the person's
   // own pipeline, saved searches and every pipeline card about them.
   await removeFromOrganizations(tx, subjectId, now);
+  await eraseRecommendationData(tx, subjectId);
   await tx.updateTable('contact_requests').set({ status: 'declined', responded_at: now })
     .where((eb) => eb.or([eb('scout_id', '=', subjectId), eb('player_id', '=', subjectId)])).where('status', '=', 'pending').execute();
   await tx.updateTable('guardian_relationships').set({ status: 'revoked' })
@@ -277,6 +279,7 @@ export const accountRoutes = [
           })),
           couponRedemptions: redemptions.map((r) => ({ code: r.code, at: r.created_at.toISOString() })),
         },
+        recommendations: await recommendationExport(ctx.deps, uid),
         scout: isScout ? {
           shortlists: shortlists.map((s) => ({ id: s.id, name: s.name, playerIds: members.filter((m) => m.shortlist_id === s.id).map((m) => m.player_id), createdAt: s.created_at.toISOString() })),
           notes: notes.map((n) => ({ id: n.id, playerId: n.player_id, body: n.body, createdAt: n.created_at.toISOString() })),

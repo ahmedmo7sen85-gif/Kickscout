@@ -1,24 +1,22 @@
-import Anthropic from '@anthropic-ai/sdk';
+import { AiOutputError, AiPermanentError, AiRouter, ClaudeProvider, routingFromEnv } from '@fp/ai';
+import type { AiCallRecorder, AiContent, AiEffort, AiRequest, ClaudeCreateParams, CreateMessage } from '@fp/ai';
 import { SKILL_KEYS, MODERATION_VERDICTS } from '@fp/domain';
 import { PermanentJobError } from '../errors.js';
 import { AnalysisSchema, MODERATION_CATEGORIES, VIDEO_CONTEXTS } from './types.js';
 import type { AnalysisInput, AnalysisOutcome, VideoAnalyzer } from './types.js';
 
-type CreateParams = Anthropic.Beta.Messages.MessageCreateParamsNonStreaming;
-type BetaMessage = Anthropic.Beta.Messages.BetaMessage;
-
-/** The one SDK call the analyzer makes; injectable so tests run without a network or key. */
-export type CreateMessage = (params: CreateParams) => Promise<BetaMessage>;
+export type { CreateMessage } from '@fp/ai';
 
 export interface ClaudeAnalyzerOptions {
   model: string;
-  effort: 'low' | 'medium' | 'high' | 'xhigh' | 'max';
+  effort: AiEffort;
   /** Server-side refusal fallbacks (`fallbacks: "default"`, Claude API only). */
   serverFallbacks: boolean;
   maxTokens?: number;
+  recorder?: AiCallRecorder | null;
 }
 
-/** Output may be cut off; a later attempt can succeed, so the job is retried. */
+/** Output may be cut off or unusable; a later attempt can succeed, so the job is retried. */
 export class AnalyzerRetryableError extends Error {
   override name = 'AnalyzerRetryableError';
 }
@@ -80,23 +78,19 @@ export const OUTPUT_SCHEMA = {
   },
 } as const;
 
-export class ClaudeVideoAnalyzer implements VideoAnalyzer {
-  constructor(
-    private readonly create: CreateMessage,
-    private readonly opts: ClaudeAnalyzerOptions,
-  ) {}
+/**
+ * Video tagging and moderation through the AI router (task `video_analysis`, the heavy tier). The router
+ * picks the model, enforces the budget and timeout, retries transient errors and records every call;
+ * this class builds the prompt and turns the validated answer into an outcome for the pipeline.
+ */
+export class AiVideoAnalyzer implements VideoAnalyzer {
+  constructor(private readonly router: AiRouter) {}
 
-  static fromApiKey(apiKey: string, opts: ClaudeAnalyzerOptions): ClaudeVideoAnalyzer {
-    // The SDK retries 408/409/429/5xx and connection errors itself (2 retries by default); the job queue retries beyond that.
-    const client = new Anthropic({ apiKey, timeout: 5 * 60_000 });
-    return new ClaudeVideoAnalyzer((params) => client.beta.messages.create(params), opts);
-  }
-
-  buildRequest(input: AnalysisInput): CreateParams {
-    const content: Anthropic.Beta.Messages.BetaContentBlockParam[] = [];
+  content(input: AnalysisInput): AiContent[] {
+    const content: AiContent[] = [];
     input.frames.forEach((frame, i) => {
       content.push({ type: 'text', text: `Frame ${i + 1} of ${input.frames.length}, at ${(frame.atMs / 1000).toFixed(1)} s:` });
-      content.push({ type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: frame.data.toString('base64') } });
+      content.push({ type: 'image', mediaType: 'image/jpeg', data: frame.data.toString('base64') });
     });
     content.push({
       type: 'text',
@@ -104,66 +98,59 @@ export class ClaudeVideoAnalyzer implements VideoAnalyzer {
         `These are ${input.frames.length} frames from a ${(input.durationMs / 1000).toFixed(1)} second clip ` +
         `(${input.width}x${input.height}). Describe and moderate it following your instructions.`,
     });
+    return content;
+  }
+
+  /** The provider-neutral request the router will send for this clip. */
+  request(input: AnalysisInput): AiRequest {
+    const r = this.router.route('video_analysis');
     return {
-      model: this.opts.model,
-      max_tokens: this.opts.maxTokens ?? 16_000,
-      system: SYSTEM_PROMPT,
-      thinking: { type: 'adaptive' },
-      output_config: { effort: this.opts.effort, format: { type: 'json_schema', schema: OUTPUT_SCHEMA } },
-      messages: [{ role: 'user', content }],
-      ...(this.opts.serverFallbacks ? { betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default' as const } : {}),
+      model: r.model, effort: r.effort, maxTokens: r.maxTokens, system: SYSTEM_PROMPT, content: this.content(input),
+      jsonSchema: OUTPUT_SCHEMA as unknown as Record<string, unknown>, serverFallbacks: r.serverFallbacks,
     };
   }
 
   async analyze(input: AnalysisInput): Promise<AnalysisOutcome> {
     if (input.frames.length === 0) throw new PermanentJobError('no frames could be extracted for analysis');
-    let response: BetaMessage;
     try {
-      response = await this.create(this.buildRequest(input));
+      const res = await this.router.run('video_analysis', {
+        system: SYSTEM_PROMPT,
+        content: this.content(input),
+        jsonSchema: OUTPUT_SCHEMA as unknown as Record<string, unknown>,
+        parse: (json) => AnalysisSchema.parse(json),
+      }, { videoId: input.videoId, userId: input.ownerId ?? null });
+      if (res.kind === 'refusal') {
+        return { kind: 'refusal', explanation: res.explanation ?? 'The AI model declined to analyse this video.', category: res.category, model: res.model };
+      }
+      return { kind: 'result', analysis: res.value, model: res.model };
     } catch (err) {
       // Requests that are wrong or unauthorised will fail the same way every time.
-      if (
-        err instanceof Anthropic.BadRequestError ||
-        err instanceof Anthropic.AuthenticationError ||
-        err instanceof Anthropic.PermissionDeniedError ||
-        err instanceof Anthropic.NotFoundError ||
-        err instanceof Anthropic.UnprocessableEntityError
-      ) {
-        throw new PermanentJobError(`AI analysis request rejected (${err.status}): ${err.message}`);
-      }
-      throw err; // rate limits, overload, 5xx, network: retried by the job queue
+      if (err instanceof AiPermanentError) throw new PermanentJobError(err.message);
+      if (err instanceof AiOutputError) throw new AnalyzerRetryableError(err.message);
+      throw err; // rate limits, overload, 5xx, network, timeouts: retried by the job queue
     }
-    return this.interpret(response);
+  }
+}
+
+/**
+ * Claude video analyzer: the AI video analyzer wired to the Claude provider with one route. Kept for
+ * callers and tests that construct it from an SDK call; production uses `createVideoAnalyzer` (factory.ts).
+ */
+export class ClaudeVideoAnalyzer extends AiVideoAnalyzer {
+  private readonly provider: ClaudeProvider;
+
+  constructor(create: CreateMessage, opts: ClaudeAnalyzerOptions) {
+    const provider = new ClaudeProvider(create);
+    const routes = routingFromEnv({});
+    routes.video_analysis = {
+      ...routes.video_analysis, model: opts.model, effort: opts.effort, serverFallbacks: opts.serverFallbacks,
+      maxTokens: opts.maxTokens ?? routes.video_analysis.maxTokens, maxAttempts: 1,
+    };
+    super(new AiRouter(provider, routes, { recorder: opts.recorder ?? null }));
+    this.provider = provider;
   }
 
-  interpret(response: BetaMessage): AnalysisOutcome {
-    switch (response.stop_reason) {
-      case 'refusal':
-        // Content is empty or partial on a refusal; never read it. stop_details is informational and may be null.
-        return {
-          kind: 'refusal',
-          explanation: response.stop_details?.explanation ?? 'The AI model declined to analyse this video.',
-          category: response.stop_details?.category ?? null,
-          model: response.model,
-        };
-      case 'max_tokens':
-        throw new AnalyzerRetryableError('AI analysis was cut off by the output token limit');
-      case 'end_turn':
-        break;
-      default:
-        throw new AnalyzerRetryableError(`unexpected AI stop reason: ${response.stop_reason}`);
-    }
-    const text = response.content.flatMap((b) => (b.type === 'text' ? [b.text] : [])).join('');
-    let json: unknown;
-    try {
-      json = JSON.parse(text);
-    } catch {
-      throw new AnalyzerRetryableError('AI analysis did not return valid JSON');
-    }
-    const parsed = AnalysisSchema.safeParse(json);
-    if (!parsed.success) {
-      throw new AnalyzerRetryableError(`AI analysis did not match the schema: ${parsed.error.issues.map((i) => i.path.join('.')).join(', ')}`);
-    }
-    return { kind: 'result', analysis: parsed.data, model: response.model };
+  buildRequest(input: AnalysisInput): ClaudeCreateParams {
+    return this.provider.buildParams(this.request(input));
   }
 }

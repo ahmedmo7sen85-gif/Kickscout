@@ -140,6 +140,7 @@ export async function processVideo(deps: PipelineDeps, videoId: string): Promise
       const frames = await extractFrames(deps.media, playback, dir, outDurationMs);
       outcome = await deps.analyzer.analyze({
         videoId,
+        ownerId: video.owner_user_id,
         durationMs: outDurationMs,
         width: out?.width ?? info.width,
         height: out?.height ?? info.height,
@@ -166,6 +167,8 @@ export async function processVideo(deps: PipelineDeps, videoId: string): Promise
           football_present: analysis?.footballPresent ?? null,
           players_visible: analysis?.playersVisible ?? null,
           ai_summary: JSON.stringify({ ...aiSummary, duplicateOf: duplicate?.id ?? null }),
+          // The model version behind this analysis (after any server-side fallback), shown to staff.
+          ai_model: outcome?.model ?? null,
           ...(decision.status === 'published' ? { published_at: sql`now()` } : {}),
         })
         .where('id', '=', videoId)
@@ -185,7 +188,7 @@ export async function processVideo(deps: PipelineDeps, videoId: string): Promise
         if (best.size > 0) {
           await tx
             .insertInto('video_skills')
-            .values([...best].map(([key, confidence]) => ({ video_id: videoId, skill_key: key, source: 'ai', confidence: Math.round(confidence * 1000) / 1000 })))
+            .values([...best].map(([key, confidence]) => ({ video_id: videoId, skill_key: key, source: 'ai', confidence: Math.round(confidence * 1000) / 1000, model: outcome!.model })))
             .execute();
         }
       }

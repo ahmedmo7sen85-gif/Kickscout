@@ -6,6 +6,7 @@ import { PageHead, Section } from '@/components/PageHead';
 import { PlayerCard } from '@/components/player/PlayerCard';
 import { ScoutActions } from '@/components/player/ScoutActions';
 import { SaveSearchForm } from '@/components/crm/SaveSearchForm';
+import { FilterChips, NlInterpretation, NlSearchBox, type ScoutFilterKey } from '@/components/scout/NlSearch';
 import { ComingSoonBadge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { SkeletonGrid, SkeletonList } from '@/components/ui/Skeleton';
@@ -16,7 +17,7 @@ import { AGE_BANDS, FEET, POSITIONS, SKILL_KEYS } from '@/lib/constants';
 import { errorMessage } from '@/lib/errors';
 import { useI18n } from '@/lib/i18n/provider';
 import { useApi } from '@/lib/useApi';
-import type { AgeBand, Foot, PlayerCard as PlayerCardData, Position, ScoutSearchQuery, SkillKey } from '@/lib/types';
+import type { AgeBand, Foot, NlScoutSearchResponse, PlayerCard as PlayerCardData, Position, ScoutSearchQuery, SkillKey } from '@/lib/types';
 import { ScoutGate } from './ScoutGate';
 
 interface Draft { q: string; country: string; position: Position | ''; foot: Foot | ''; skill: SkillKey | ''; ageGroup: AgeBand | ''; verifiedOnly: boolean; minFollowers: string }
@@ -37,6 +38,13 @@ function toQuery(d: Draft): ScoutSearchQuery {
   };
 }
 
+function fromQuery(q: ScoutSearchQuery): Draft {
+  return {
+    q: q.q ?? '', country: q.country ?? '', position: q.position ?? '', foot: q.foot ?? '', skill: q.skill ?? '', ageGroup: q.ageGroup ?? '',
+    verifiedOnly: !!q.verifiedOnly, minFollowers: q.minFollowers ? String(q.minFollowers) : '',
+  };
+}
+
 export function ScoutDashboard() {
   return <ScoutGate><Dashboard /></ScoutGate>;
 }
@@ -49,15 +57,24 @@ function Dashboard() {
   const [extra, setExtra] = useState<{ items: PlayerCardData[]; cursor: string | null } | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
   const [actFor, setActFor] = useState<PlayerCardData | null>(null);
-  const players = useApi((s) => api.scoutPlayers(query, s), [JSON.stringify(query)]);
+  // A natural-language search already returns its first page (and was charged once), so the
+  // structured search stays idle until a filter is edited.
+  const [nl, setNl] = useState<NlScoutSearchResponse | null>(null);
+  const players = useApi((s) => api.scoutPlayers(query, s), [JSON.stringify(query)], { enabled: !nl });
   const lists = useApi((s) => api.shortlists(s), []);
   const outgoing = useApi((s) => api.contactRequests('outgoing', s), []);
   const [newList, setNewList] = useState('');
   const [creating, setCreating] = useState(false);
 
-  const submit = (e: FormEvent) => { e.preventDefault(); setExtra(null); setQuery(toQuery(draft)); };
-  const items = players.status === 'success' ? [...players.data.items, ...(extra?.items ?? [])] : [];
-  const cursor = players.status === 'success' ? (extra ? extra.cursor : players.data.nextCursor) : null;
+  const submit = (e: FormEvent) => { e.preventDefault(); setExtra(null); setNl(null); setQuery(toQuery(draft)); };
+  const onNl = (r: NlScoutSearchResponse) => { setExtra(null); setNl(r); setQuery(r.filters); setDraft(fromQuery(r.filters)); };
+  const removeFilter = (key: ScoutFilterKey) => {
+    const { [key]: _drop, ...rest } = query;
+    setExtra(null); setNl(null); setQuery(rest); setDraft(fromQuery(rest));
+  };
+  const first = nl ? nl.results : players.status === 'success' ? players.data : null;
+  const items = first ? [...first.items, ...(extra?.items ?? [])] : [];
+  const cursor = first ? (extra ? extra.cursor : first.nextCursor) : null;
   const more = async () => {
     if (!cursor) return;
     setLoadingMore(true);
@@ -79,6 +96,7 @@ function Dashboard() {
       <PageHead title={t.scout.title} intro={t.scout.intro} actions={<span className="row small muted">{t.scout.compare} <ComingSoonBadge /></span>} />
       <div className="split">
         <aside className="stack">
+          <NlSearchBox onResult={onNl} />
           <form className="card" onSubmit={submit} aria-label={t.scout.searchTitle}>
             <h2 className="section-title" style={{ fontSize: '1.1rem' }}>{t.scout.searchTitle}</h2>
             <label className="field"><span className="field__label">{t.scout.query}</span>
@@ -102,7 +120,7 @@ function Dashboard() {
             <label className="check"><input type="checkbox" checked={draft.verifiedOnly} onChange={(e) => set('verifiedOnly', e.target.checked)} />{t.scout.verifiedOnly}</label>
             <div className="row">
               <Button type="submit" variant="primary">{t.common.search}</Button>
-              <Button variant="ghost" onClick={() => { setDraft(EMPTY); setExtra(null); setQuery({}); }}>{t.common.clear}</Button>
+              <Button variant="ghost" onClick={() => { setDraft(EMPTY); setExtra(null); setNl(null); setQuery({}); }}>{t.common.clear}</Button>
             </div>
           </form>
 
@@ -134,9 +152,11 @@ function Dashboard() {
 
         <div className="stack stack--loose">
           <Section title={t.scout.results} id="results">
-            {players.status === 'loading' ? <SkeletonGrid count={6} aspect="4 / 3" label={t.common.loading} /> : null}
-            {players.status === 'error' ? <ErrorState error={players.error} title={t.scout.errorTitle} onRetry={players.retry} /> : null}
-            {players.status === 'success' && !items.length ? <EmptyState icon="scout" title={t.scout.noResults} /> : null}
+            {nl ? <NlInterpretation result={nl} /> : null}
+            {nl || Object.values(query).some((v) => v !== undefined) ? <FilterChips filters={query} onRemove={removeFilter} /> : null}
+            {!nl && players.status === 'loading' ? <SkeletonGrid count={6} aspect="4 / 3" label={t.common.loading} /> : null}
+            {!nl && players.status === 'error' ? <ErrorState error={players.error} title={t.scout.errorTitle} onRetry={players.retry} /> : null}
+            {first && !items.length ? <EmptyState icon="scout" title={t.scout.noResults} /> : null}
             {items.length ? (
               <div className="grid-players">
                 {items.map((p) => (

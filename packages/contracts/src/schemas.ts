@@ -165,6 +165,8 @@ export const VideoTag = z.object({
   source: z.enum(['ai', 'user']),
   /** AI confidence, 0..1. Null for tags the player added. */
   confidence: z.number().nullable(),
+  /** The model that suggested an AI tag. Shown to the owner and staff only; null otherwise and for player tags. */
+  model: z.string().nullable().default(null),
 });
 export const TagCorrectionRequest = z.object({
   add: z.array(SkillKey).max(10).default([]),
@@ -208,12 +210,30 @@ export const VideoPage = z.object({ items: z.array(VideoView), nextCursor: z.str
 // ---------------------------------------------------------------- feed and social
 export const FeedTab = z.enum(['for_you', 'following', 'new_talent', 'trending']);
 export const FeedQuery = CursorQuery.extend({ tab: FeedTab.default('for_you') });
+/** "Why am I seeing this?" for one feed item. */
+export const FeedWhy = z.object({ code: z.string(), text: Bilingual });
 export const FeedPage = z.object({
   tab: FeedTab,
   capability: Capability,
   items: z.array(VideoView),
   nextCursor: z.string().nullable(),
+  /** True when For You was ranked from the viewer's own signals (followed players, liked skills, country). */
+  personalized: z.boolean().default(false),
+  /** For You: the reason each item (by video id) is shown. */
+  why: z.record(z.string(), FeedWhy).default({}),
 });
+
+// ---------------------------------------------------------------- recommendation controls
+export const RecommendationSettingsView = z.object({
+  /** The viewer's choice. */
+  personalize: z.boolean(),
+  /** Personalisation is switched on for the platform (FOR_YOU_PERSONALIZATION); when false For You is newest first for everyone. */
+  available: z.boolean(),
+  /** Likes and saves before this no longer shape the feed. */
+  historyResetAt: z.iso.datetime().nullable(),
+  notInterested: z.object({ videos: z.number().int(), players: z.number().int(), skills: z.array(SkillKey) }),
+});
+export const UpdateRecommendationSettingsRequest = z.object({ personalize: z.boolean() }).strict();
 
 export const CreateCommentRequest = z.object({ body: z.string().trim().min(1).max(2000), parentId: Id.optional() });
 export const CommentView = z.object({
@@ -268,7 +288,8 @@ export const SearchResult = z.object({
   hashtags: z.array(z.object({ tag: z.string(), videos: z.number().int() })),
 });
 
-export const RadarCategory = z.enum(['rising', 'most_watched', 'most_saved', 'new_talents', 'hidden_gems']);
+export const RadarCategory = z.enum(['rising', 'most_watched', 'most_saved', 'new_talents', 'hidden_gems', 'most_improved', 'top_by_skill',
+  'new_to_platform', 'regional_standouts']);
 export const RadarQuery = z.object({
   category: RadarCategory.default('rising'),
   country: z.string().regex(/^[A-Z]{2}$/).optional(),
@@ -488,6 +509,11 @@ export const AccountExport = z.object({
     })),
     couponRedemptions: z.array(z.object({ code: z.string(), at: z.iso.datetime() })),
   }),
+  recommendations: z.object({
+    personalize: z.boolean(),
+    historyResetAt: z.iso.datetime().nullable(),
+    notInterested: z.array(z.object({ kind: z.enum(['video', 'player', 'skill']), id: z.string(), at: z.iso.datetime() })),
+  }).nullable().default(null),
   scout: z.object({
     shortlists: z.array(z.object({ id: Id, name: z.string(), playerIds: z.array(Id), createdAt: z.iso.datetime() })),
     notes: z.array(z.object({ id: Id, playerId: Id, body: z.string(), createdAt: z.iso.datetime() })),
@@ -502,6 +528,8 @@ export const ModerationCaseView = z.object({
   source: z.enum(['ai', 'rules', 'report', 'appeal', 'copyright']),
   categories: z.array(z.string()),
   aiVerdict: z.unknown().nullable(),
+  /** The model version behind the AI analysis of the target video. */
+  aiModel: z.string().nullable().default(null),
   reportCount: z.number().int(),
   priority: z.number().int(),
   status: z.enum(['open', 'actioned', 'dismissed']),
@@ -637,6 +665,22 @@ export const CrmEntryDetail = CrmEntryView.extend({
 
 /** Saved-search filters are scout-search filters (the same schema, without paging). */
 export const SavedSearchFilters = ScoutSearchQuery.omit({ cursor: true, limit: true });
+
+/** Natural-language scout search: free text in, the same structured filters out, then the normal search. */
+export const NlScoutSearchRequest = z.object({
+  query: z.string().trim().min(1).max(300),
+  limit: z.number().int().min(1).max(50).default(20),
+});
+export const NlScoutSearchResponse = z.object({
+  /** Exactly what was searched: valid scout-search filters, editable and re-runnable with GET /v1/scout/players. */
+  filters: SavedSearchFilters,
+  /** 'ai': read by the AI model; 'rules': the built-in parser (no AI configured, or the AI answer was unusable). */
+  parser: z.enum(['ai', 'rules']),
+  model: z.string().nullable(),
+  /** Built from the filters, never from model text. */
+  explanation: Bilingual,
+  results: PlayerPage,
+});
 export const CreateSavedSearchRequest = z.object({
   name: z.string().trim().min(1).max(80),
   filters: SavedSearchFilters,
@@ -757,3 +801,16 @@ export const CouponView = z.object({
 });
 export const WebhookAck = z.object({ received: z.literal(true), duplicate: z.boolean() });
 export const BillingMaintenanceReport = z.object({ canceled: z.number().int(), failed: z.number().int(), pending: z.number().int() });
+
+// ---------------------------------------------------------------- AI usage (admin)
+export const AiUsageQuery = z.object({ days: z.coerce.number().int().min(1).max(90).default(30) });
+export const AiUsageView = z.object({
+  since: z.iso.datetime(),
+  /** Whether an AI provider is configured on this API instance. */
+  available: z.boolean(),
+  routes: z.array(z.object({ task: z.string(), tier: z.string(), model: z.string(), effort: z.string(), maxTokens: z.number().int(), timeoutMs: z.number().int() })),
+  items: z.array(z.object({
+    task: z.string(), model: z.string(), calls: z.number().int(), ok: z.number().int(), failed: z.number().int(),
+    inputTokens: z.number().int(), outputTokens: z.number().int(), avgLatencyMs: z.number().int(),
+  })),
+});

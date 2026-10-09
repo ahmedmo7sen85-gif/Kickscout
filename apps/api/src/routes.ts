@@ -13,9 +13,11 @@ import { copyrightRoutes } from './modules/copyright.js';
 import { orgRoutes } from './modules/orgs.js';
 import { crmRoutes } from './modules/crm.js';
 import { billingRoutes } from './modules/billing.js';
+import { recommendationRoutes } from './modules/recommendations.js';
+import { aiAdminRoutes } from './modules/ai-admin.js';
 
 export const routes: ApiRoute[] = [
   ...onboardingRoutes, ...profileRoutes, ...mediaRoutes, ...feedRoutes, ...socialRoutes, ...catalogRoutes,
   ...challengeRoutes, ...scoutRoutes, ...moderationRoutes, ...accountRoutes, ...copyrightRoutes,
-  ...orgRoutes, ...crmRoutes, ...billingRoutes,
+  ...orgRoutes, ...crmRoutes, ...billingRoutes, ...recommendationRoutes, ...aiAdminRoutes,
 ];

@@ -9,7 +9,8 @@ import { api } from '@/lib/api';
 import { countryName, flagEmoji } from '@/lib/format';
 import { useReducedMotion } from '@/lib/hooks';
 import { useI18n } from '@/lib/i18n/provider';
-import type { VideoView } from '@/lib/types';
+import { WhyThis } from '@/components/feed/Recommendations';
+import type { FeedWhy, VideoView } from '@/lib/types';
 import { FollowButton } from './FollowButton';
 import { SkillTags } from './SkillTags';
 import { VideoActions } from './VideoActions';
@@ -19,7 +20,13 @@ import { VideoActions } from './VideoActions';
  * default, looping); everything else pauses. Reduced-motion users get a play button instead of
  * autoplay.
  */
-export function FeedPlayer({ videos, onNearEnd, hideFollow = false }: { videos: VideoView[]; onNearEnd?: () => void; hideFollow?: boolean }) {
+export function FeedPlayer({ videos, onNearEnd, hideFollow = false, why, onNotInterested }: {
+  videos: VideoView[]; onNearEnd?: () => void; hideFollow?: boolean;
+  /** For You: why each clip (by id) is shown. */
+  why?: Record<string, FeedWhy>;
+  /** For You, signed in: "Not interested" for a clip. */
+  onNotInterested?: (videoId: string) => void;
+}) {
   const [muted, setMuted] = useState(true);
   const [activeIndex, setActiveIndex] = useState(0);
 
@@ -30,14 +37,15 @@ export function FeedPlayer({ videos, onNearEnd, hideFollow = false }: { videos: 
   return (
     <div className="feed" data-testid="feed">
       {videos.map((v, i) => (
-        <FeedItem key={v.id} video={v} muted={muted} onToggleMute={() => setMuted((m) => !m)} onActive={() => setActiveIndex(i)} hideFollow={hideFollow} />
+        <FeedItem key={v.id} video={v} muted={muted} onToggleMute={() => setMuted((m) => !m)} onActive={() => setActiveIndex(i)} hideFollow={hideFollow}
+          why={why?.[v.id]} onNotInterested={onNotInterested ? () => onNotInterested(v.id) : undefined} />
       ))}
     </div>
   );
 }
 
-function FeedItem({ video, muted, onToggleMute, onActive, hideFollow }:
-  { video: VideoView; muted: boolean; onToggleMute: () => void; onActive: () => void; hideFollow: boolean }) {
+function FeedItem({ video, muted, onToggleMute, onActive, hideFollow, why, onNotInterested }:
+  { video: VideoView; muted: boolean; onToggleMute: () => void; onActive: () => void; hideFollow: boolean; why: FeedWhy | undefined; onNotInterested: (() => void) | undefined }) {
   const { t, fmt, locale } = useI18n();
   const reduced = useReducedMotion();
   const ref = useRef<HTMLElement>(null);
@@ -134,6 +142,7 @@ function FeedItem({ video, muted, onToggleMute, onActive, hideFollow }:
           {country ? <span>{country}</span> : null}
         </p>
         <SkillTags tags={video.tags} compact />
+        <WhyThis why={why} onNotInterested={onNotInterested} />
         {video.hashtags.length ? (
           <p className="feed-item__hashtags">
             {video.hashtags.map((h) => <Link key={h} href={`/search?hashtag=${encodeURIComponent(h)}&type=videos`} dir="auto">#{h}</Link>)}

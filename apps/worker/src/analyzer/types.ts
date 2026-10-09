@@ -15,13 +15,14 @@ export const AnalysisSchema = z.object({
   footballPresent: z.boolean(),
   playersVisible: z.number().int().min(0).max(100),
   context: z.enum(VIDEO_CONTEXTS),
-  skills: z.array(z.object({ key: z.enum(SKILL_KEYS), confidence: z.number().min(0).max(1) })).max(SKILL_KEYS.length),
+  skills: z.array(z.object({ key: z.enum(SKILL_KEYS), confidence: z.number().min(0).max(1) }).strict()).max(SKILL_KEYS.length),
   moderation: z.object({
     verdict: z.enum(MODERATION_VERDICTS),
     categories: z.array(z.enum(MODERATION_CATEGORIES)),
     explanation: z.string().max(2000),
-  }),
-});
+  }).strict(),
+// Strict at every level: anything beyond tags and moderation (a rating, a "potential" score) is refused, not stripped.
+}).strict();
 export type Analysis = z.infer<typeof AnalysisSchema>;
 
 export interface AnalysisFrame {
@@ -33,6 +34,8 @@ export interface AnalysisFrame {
 
 export interface AnalysisInput {
   videoId: string;
+  /** The uploader, recorded with the AI call for accounting. */
+  ownerId?: string | null;
   durationMs: number;
   width: number;
   height: number;

@@ -29,6 +29,7 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.132.1",
     "@aws-sdk/client-s3": "^3.900.0",
+    "@fp/ai": "workspace:*",
     "@fp/contracts": "workspace:*",
     "@fp/db": "workspace:*",
     "@fp/domain": "workspace:*",

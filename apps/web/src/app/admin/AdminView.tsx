@@ -15,7 +15,7 @@ import { normalizeHashtag, SKILL_KEYS } from '@/lib/constants';
 import { errorMessage } from '@/lib/errors';
 import { useI18n } from '@/lib/i18n/provider';
 import { useApi } from '@/lib/useApi';
-import type { ModerationCaseView, ModerationDecisionRequest, SkillKey } from '@/lib/types';
+import type { AiUsageView, ModerationCaseView, ModerationDecisionRequest, SkillKey } from '@/lib/types';
 
 /** Upheld claims on this many distinct videos flag the owner as a repeat infringer (a prompt for review, not an automatic ban). */
 const REPEAT_INFRINGER_STRIKES = 3;
@@ -39,6 +39,7 @@ function Gate() {
     <div className="stack stack--loose">
       <Stats />
       <Moderation />
+      <AiUsage />
       <Verifications />
       <CreateChallenge />
       <Audit />
@@ -61,6 +62,46 @@ function Stats() {
         <div className="stat-grid">{labels.map(([k, l]) => <div key={k} className="stat"><strong>{formatNumber(s.data[k])}</strong><span>{l}</span></div>)}</div>
       ) : null}
     </Section>
+  );
+}
+
+function AiUsage() {
+  const { t, formatNumber } = useI18n();
+  const u = useApi((s) => api.aiUsage(s), []);
+  return (
+    <Section title={t.aiAdmin.title} id="a-ai">
+      {u.status === 'loading' ? <SkeletonList rows={2} label={t.common.loading} /> : null}
+      {u.status === 'error' ? <ErrorState error={u.error} onRetry={u.retry} /> : null}
+      {u.status === 'success' ? <AiUsageTable usage={u.data} formatNumber={formatNumber} /> : null}
+    </Section>
+  );
+}
+
+export function AiUsageTable({ usage, formatNumber }: { usage: AiUsageView; formatNumber: (n: number) => string }) {
+  const { t } = useI18n();
+  const a = t.aiAdmin;
+  return (
+    <div className="stack">
+      {!usage.available ? <p className="muted small" role="note">{a.noKey}</p> : null}
+      <ul className="list small">
+        {usage.routes.map((r) => <li key={r.task} className="mono">{r.task}: {r.model} · {r.tier} · {r.effort}</li>)}
+      </ul>
+      {usage.items.length ? (
+        <div style={{ overflowX: 'auto' }}>
+          <table className="small">
+            <thead><tr><th>{a.task}</th><th>{a.modelCol}</th><th>{a.calls}</th><th>{a.failed}</th><th>{a.tokensIn}</th><th>{a.tokensOut}</th><th>{a.latency}</th></tr></thead>
+            <tbody>
+              {usage.items.map((i) => (
+                <tr key={`${i.task}-${i.model}`}>
+                  <td>{i.task}</td><td className="mono">{i.model}</td><td>{formatNumber(i.calls)}</td><td>{formatNumber(i.failed)}</td>
+                  <td>{formatNumber(i.inputTokens)}</td><td>{formatNumber(i.outputTokens)}</td><td>{formatNumber(i.avgLatencyMs)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : null}
+    </div>
   );
 }
 
@@ -96,6 +137,7 @@ function Moderation() {
                 <span className="badge badge--neutral">{fmt(t.admin.source, { source: c.source })}</span>
                 <span className="badge badge--warn">{fmt(t.admin.priority, { n: c.priority })}</span>
                 <span className="muted small">{fmt(t.admin.reports, { n: c.reportCount })}</span>
+                {c.aiModel ? <span className="badge badge--outline mono" data-testid="ai-model">{fmt(t.aiAdmin.model, { model: c.aiModel })}</span> : null}
               </div>
               {c.categories.length ? <p className="small">{c.categories.join(', ')}</p> : null}
               {c.video ? (

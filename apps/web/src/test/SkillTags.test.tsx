@@ -6,8 +6,8 @@ import { createI18nValue, I18nContext } from '@/lib/i18n/provider';
 import type { Locale, VideoTag } from '@/lib/types';
 
 const tags: VideoTag[] = [
-  { skill: 'elastico', name: { en: 'Elastico', ar: 'الإلاستيكو' }, source: 'ai', confidence: 0.82 },
-  { skill: 'dribbling', name: { en: 'Dribbling', ar: 'المراوغة' }, source: 'user', confidence: null },
+  { skill: 'elastico', name: { en: 'Elastico', ar: 'الإلاستيكو' }, source: 'ai', confidence: 0.82, model: null },
+  { skill: 'dribbling', name: { en: 'Dribbling', ar: 'المراوغة' }, source: 'user', confidence: null, model: null },
 ];
 
 function render(locale: Locale, editable = false) {
