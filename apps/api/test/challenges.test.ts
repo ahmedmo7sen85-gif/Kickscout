@@ -140,7 +140,7 @@ describe('KICKSCOUT Challenges', () => {
     expect(await moderate(first.body.videoId, 'published')).toMatchObject({ to: 'pending_judging' });
     // Published but not judged: still not on the challenge's lists.
     expect((await call('GET', `/v1/challenges/${slug}/entries`)).body.items).toEqual([]);
-    const check = await env.db.selectFrom('challenge_submission_reviews').select(['decision', 'agent']).where('submission_id', '=', subs.p1).execute();
+    const check = await env.db.selectFrom('challenge_submission_reviews').select(['decision', 'agent']).where('submission_id', '=', subs.p1!).execute();
     expect(check).toEqual([{ decision: 'pass', agent: 'verification' }]);
   });
 
@@ -151,7 +151,7 @@ describe('KICKSCOUT Challenges', () => {
     const ok = results.filter((r) => r.status === 201).map((r) => r.body);
     for (const e of ok) await arrive(p2.token, e);
     for (const e of ok) await moderate(e.videoId, 'published');
-    [subs.p2a, subs.p2b, subs.p2c] = ok.map((e) => e.submissionId as string);
+    [subs.p2a, subs.p2b, subs.p2c] = ok.map((e) => e.submissionId as string) as [string, string, string];
   });
 
   it('does not count a clip the safety pipeline rejected when retries are allowed', async () => {

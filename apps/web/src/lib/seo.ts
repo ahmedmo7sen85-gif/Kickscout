@@ -98,7 +98,7 @@ export const STATIC_SITEMAP_PATHS = [
 
 /** Paths robots.txt keeps crawlers out of. */
 export const PRIVATE_PATHS = [
-  '/admin', '/settings', '/notifications', '/scout', '/org', '/onboarding', '/auth', '/guardian', '/upload', '/profile', '/login', '/signup',
+  '/admin', '/judge', '/settings', '/notifications', '/scout', '/org', '/onboarding', '/auth', '/guardian', '/upload', '/profile', '/login', '/signup',
   '/legal/counter-notice',
 ] as const;
 
@@ -113,5 +113,6 @@ export function buildSitemap(siteUrl: string, data: SitemapView | null, now = ne
   if (!data) return entries;
   for (const p of data.profiles) entries.push({ url: `${siteUrl}/u/${encodeURIComponent(p.handle)}`, lastModified: new Date(p.updatedAt), changeFrequency: 'daily', priority: 0.7 });
   for (const v of data.videos) entries.push({ url: `${siteUrl}/v/${encodeURIComponent(v.id)}`, lastModified: new Date(v.updatedAt), changeFrequency: 'weekly', priority: 0.5 });
+  for (const c of data.challenges ?? []) entries.push({ url: `${siteUrl}/challenges/${encodeURIComponent(c.slug)}`, lastModified: new Date(c.updatedAt), changeFrequency: 'daily', priority: 0.6 });
   return entries;
 }

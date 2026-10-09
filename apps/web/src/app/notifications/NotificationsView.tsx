@@ -18,8 +18,16 @@ import type { NotificationView } from '@/lib/types';
 const str = (v: unknown) => (typeof v === 'string' ? v : null);
 
 /** Notification payloads vary by kind; show the server's text when it sends one, otherwise the kind. */
-function describe(n: NotificationView, generic: string, savedSearchMatch: string, game?: { invite: string; result: string }): { text: string; href: string | null } {
+/** challenge.* notices about the player's own entries open My challenges; the rest open the challenge. */
+const MY_CHALLENGE_KINDS = new Set(['submission_received', 'submission_failed', 'submission_rejected', 'result', 'disqualified', 'appeal_update', 'personal_best', 'badge', 'h2h_invite', 'h2h_result']);
+
+function describe(n: NotificationView, generic: string, savedSearchMatch: string, game?: { invite: string; result: string }, notices?: Record<string, string>): { text: string; href: string | null } {
   const p = n.payload;
+  const notice = n.kind.startsWith('challenge.') ? n.kind.slice('challenge.'.length) : null;
+  if (notice && notices?.[notice]) {
+    const slug = str(p.challengeSlug);
+    return { text: notices[notice]!, href: MY_CHALLENGE_KINDS.has(notice) ? '/challenges/mine' : slug ? `/challenges/${slug}` : '/challenges' };
+  }
   if (game && (n.kind === 'challenge.game_invite' || n.kind === 'challenge.game_result')) {
     return { text: n.kind === 'challenge.game_invite' ? game.invite : game.result, href: '/play/friends' };
   }
@@ -69,7 +77,7 @@ function List() {
       {unread ? <div><Button size="sm" onClick={markAll} loading={busy}>{t.notifications.markAllRead}</Button></div> : null}
       <ul className="list">
         {n.data.items.map((x) => {
-          const d = describe(x, t.notifications.generic, t.notifications.savedSearchMatch, { invite: t.notifications.gameInvite, result: t.notifications.gameResult });
+          const d = describe(x, t.notifications.generic, t.notifications.savedSearchMatch, { invite: t.notifications.gameInvite, result: t.notifications.gameResult }, t.notifications.challengeNotices);
           return (
             <li key={x.id} className={`notif${x.read ? '' : ' is-unread'}`}>
               <div className="list__row">

@@ -165,7 +165,7 @@ describe('eligibility', () => {
     challenge: { phase: 'open', ageGroups: ['u16', 'u18', 'adult'], difficulty: 'beginner', hasSafetyNotes: false, requiresPartner: false, attemptLimit: 3 },
     participation: null, attemptsUsed: 0, othersInClip: false, consentOthers: false, safetyAck: false,
   };
-  const code = (i: Partial<EligibilityInput> & { challenge?: Partial<EligibilityInput['challenge']> }) => {
+  const code = (i: Omit<Partial<EligibilityInput>, 'challenge'> & { challenge?: Partial<EligibilityInput['challenge']> }) => {
     const r = checkEligibility({ ...base, ...i, challenge: { ...base.challenge, ...i.challenge } });
     return r.allowed ? 'ok' : r.code;
   };

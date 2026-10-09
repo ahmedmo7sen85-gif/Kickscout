@@ -66,18 +66,23 @@ export function DiscoverView() {
   );
 }
 
-export function ChallengeTile({ c }: { c: ChallengeView }) {
+export function ChallengeTile({ c, reasons }: { c: ChallengeView; reasons?: string[] }) {
   const { t, fmt, pick, formatDate, formatNumber } = useI18n();
-  const stateLabel = c.state === 'active' ? t.challenges.active : c.state === 'upcoming' ? t.challenges.upcoming : t.challenges.ended;
+  const live = c.phase === 'open';
+  const when = c.phase === 'upcoming' ? fmt(t.challenges.startsOn, { date: formatDate(c.startsAt) })
+    : live ? fmt(t.challenges.endsOn, { date: formatDate(c.endsAt) }) : fmt(t.challenges.dates, { start: formatDate(c.startsAt), end: formatDate(c.endsAt) });
   return (
     <Link href={`/challenges/${c.slug}`} className="card card--outline" style={{ textDecoration: 'none' }}>
       <div className="row">
-        <span className={`badge ${c.state === 'active' ? 'badge--green' : 'badge--outline'}`}>{stateLabel}</span>
+        <span className={`badge ${live ? 'badge--green' : 'badge--outline'}`}>{t.challenges.phases[c.phase]}</span>
+        <span className="badge badge--outline">{t.challenges.difficulties[c.difficulty]}</span>
+        {c.format !== 'standard' ? <span className="badge badge--outline">{t.challenges.formats[c.format]}</span> : null}
         {c.isDemo ? <DemoBadge /> : null}
       </div>
       <h3 className="section-title" style={{ fontSize: '1.35rem' }}>{pick(c.title)}</h3>
-      {c.hashtag ? <p className="small" dir="auto">#{c.hashtag}</p> : null}
-      <p className="small muted">{fmt(t.challenges.dates, { start: formatDate(c.startsAt), end: formatDate(c.endsAt) })} · {fmt(t.challenges.entries, { n: formatNumber(c.entries) })}</p>
+      <p className="small muted">{t.challenges.categories[c.category]}{c.hashtag ? <span dir="auto"> · #{c.hashtag}</span> : null}</p>
+      {reasons?.length ? <p className="small" style={{ color: 'var(--accent)' }}>{reasons.map((r) => (t.challenges.reasons as Record<string, string>)[r] ?? r).join(' · ')}</p> : null}
+      <p className="small muted">{when} · {fmt(t.challenges.participants, { n: formatNumber(c.participants) })} · {fmt(t.challenges.entries, { n: formatNumber(c.entries) })}</p>
     </Link>
   );
 }

@@ -20,6 +20,9 @@ export const KNOWN_ERROR_CODES = [
   'COUPON_NOT_AVAILABLE', 'NO_BILLING_ACCOUNT', 'QUOTA_SCOUT_SEARCHES', 'QUOTA_SHORTLIST_SLOTS', 'QUOTA_ACTIVE_VIDEOS', 'QUOTA_DAILY_UPLOADS',
   'FEATURE_DISABLED',
   'FRIENDS_ONLY', 'AGE_GROUP_MISMATCH', 'CHALLENGE_OPEN', 'CHALLENGE_CLOSED',
+  'CHALLENGE_NOT_OPEN', 'AGE_GROUP_NOT_ELIGIBLE', 'ATTEMPTS_USED', 'CONSENT_OTHERS_REQUIRED', 'SAFETY_ACK_REQUIRED', 'PARTICIPATION_CLOSED',
+  'ALREADY_ENTERED', 'RECORDED_BEFORE_START', 'VOTES_USED', 'VOTING_CLOSED', 'OWN_ENTRY', 'NOT_APPEALABLE', 'RESULTS_PUBLISHED', 'PICKS_USED',
+  'CONFLICT_OF_INTEREST', 'ADMIN_REVIEW', 'ALREADY_REVIEWED', 'H2H_EXISTS', 'ENTRIES_PENDING',
 ] as const;
 export type KnownErrorCode = (typeof KNOWN_ERROR_CODES)[number];
 
@@ -186,9 +189,26 @@ export function createApiClient(opts: ApiClientOptions = {}) {
     declinePlayChallenge: (id: string) => send<void>('POST', `/v1/play/challenges/${e(id)}/decline`),
 
     challenges: (s?: AbortSignal) => get<T.ChallengeList>('/v1/challenges', undefined, s),
-    challenge: (slug: string, s?: AbortSignal) => get<T.ChallengeView>(`/v1/challenges/${e(slug)}`, undefined, s),
+    challengeHub: (s?: AbortSignal) => get<T.ChallengeHubView>('/v1/challenges/hub', undefined, s),
+    recommendedChallenges: (s?: AbortSignal) => get<T.RecommendedChallengesView>('/v1/challenges/recommended', undefined, s),
+    myChallenges: (s?: AbortSignal) => get<T.MyChallengesView>('/v1/me/challenges', undefined, s),
+    challenge: (slug: string, s?: AbortSignal) => get<T.ChallengeDetailView>(`/v1/challenges/${e(slug)}`, undefined, s),
     challengeEntries: (slug: string, q?: { cursor?: string }, s?: AbortSignal) => get<T.VideoPage>(`/v1/challenges/${e(slug)}/entries`, q, s),
-    enterChallenge: (slug: string, b: T.EnterChallengeRequest) => send<unknown>('POST', `/v1/challenges/${e(slug)}/entries`, b),
+    challengeLeaderboard: (slug: string, q: { scope?: string; limit?: number } = {}, s?: AbortSignal) => get<T.LeaderboardView>(`/v1/challenges/${e(slug)}/leaderboard`, q, s),
+    challengeResults: (slug: string, s?: AbortSignal) => get<T.ChallengeResultsView>(`/v1/challenges/${e(slug)}/results`, undefined, s),
+    joinChallenge: (slug: string, b: T.JoinChallengeRequest) => send<void>('POST', `/v1/challenges/${e(slug)}/join`, b),
+    submitChallengeEntry: (slug: string, b: T.ChallengeSubmissionRequest) => send<T.ChallengeSubmissionResponse>('POST', `/v1/challenges/${e(slug)}/submissions`, b),
+    enterChallenge: (slug: string, b: T.EnterChallengeRequest) => send<T.ChallengeSubmissionResponse>('POST', `/v1/challenges/${e(slug)}/entries`, b),
+    withdrawEntry: (id: string) => send<void>('POST', `/v1/challenge-submissions/${e(id)}/withdraw`),
+    appealEntry: (id: string, reason: string) => send<T.AppealView>('POST', `/v1/challenge-submissions/${e(id)}/appeal`, { reason }),
+    voteEntry: (id: string, on: boolean) => send<T.VoteResponse>(on ? 'POST' : 'DELETE', `/v1/challenge-submissions/${e(id)}/vote`),
+    scoutPick: (slug: string, submissionId: string) => send<void>('POST', `/v1/challenges/${e(slug)}/scout-picks`, { submissionId }),
+    createHeadToHead: (slug: string, opponentId: string) => send<T.HeadToHeadView>('POST', `/v1/challenges/${e(slug)}/head-to-heads`, { opponentId }),
+    respondHeadToHead: (id: string, accept: boolean) => send<T.HeadToHeadView>('POST', `/v1/challenge-head-to-heads/${e(id)}/${accept ? 'accept' : 'decline'}`),
+
+    // challenge judging (blind)
+    judgeQueue: (q: { challengeId?: string; cursor?: string } = {}, s?: AbortSignal) => get<T.JudgeQueueView>('/v1/judge/challenges/queue', q, s),
+    judgeReview: (submissionId: string, b: T.JudgeReviewRequest) => send<T.JudgeReviewResult>('POST', `/v1/judge/challenge-submissions/${e(submissionId)}/reviews`, b),
 
     // scouts
     scoutPlayers: (q: T.ScoutSearchQuery, s?: AbortSignal) => get<T.PlayerPage>('/v1/scout/players', q as Query, s),
@@ -242,7 +262,15 @@ export function createApiClient(opts: ApiClientOptions = {}) {
     verificationRequests: (s?: AbortSignal) => get<T.VerificationRequestList>('/v1/admin/verification-requests', undefined, s),
     decideVerification: (id: string, b: T.VerificationDecisionRequest) => send<unknown>('POST', `/v1/admin/verification-requests/${e(id)}/decision`, b),
     auditLogs: (s?: AbortSignal) => get<T.AuditLogPage>('/v1/admin/audit-logs', undefined, s),
-    createChallenge: (b: T.CreateChallengeRequest) => send<T.ChallengeView>('POST', '/v1/admin/challenges', b),
+    adminChallenges: (q: { status?: string; templates?: boolean } = {}, s?: AbortSignal) => get<T.AdminChallengeList>('/v1/admin/challenges', q as Query, s),
+    createChallenge: (b: T.AdminChallengeInput) => send<T.AdminChallengeView>('POST', '/v1/admin/challenges', b),
+    updateChallenge: (id: string, b: T.AdminChallengePatch) => send<T.AdminChallengeView>('PATCH', `/v1/admin/challenges/${e(id)}`, b),
+    transitionChallenge: (id: string, b: T.ChallengeTransitionRequest) => send<T.AdminChallengeView>('POST', `/v1/admin/challenges/${e(id)}/transition`, b),
+    setChallengeJudges: (id: string, userIds: string[]) => send<T.AdminChallengeView>('PUT', `/v1/admin/challenges/${e(id)}/judges`, { userIds }),
+    installChallengeTemplates: () => send<T.TemplateInstallResult>('POST', '/v1/admin/challenges/templates/install'),
+    challengeAppeals: (s?: AbortSignal) => get<T.AdminAppealList>('/v1/admin/challenge-appeals', undefined, s),
+    resolveAppeal: (id: string, b: T.AppealResolveRequest) => send<unknown>('POST', `/v1/admin/challenge-appeals/${e(id)}/resolve`, b),
+    challengeMetrics: (s?: AbortSignal) => get<T.ChallengeMetricsView>('/v1/admin/challenges/metrics', undefined, s),
     adminMetrics: (q: { days?: number } = {}, s?: AbortSignal) => get<T.AdminMetrics>('/v1/admin/metrics', q, s),
 
     // product analytics and feature flags

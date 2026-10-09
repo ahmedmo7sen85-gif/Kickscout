@@ -88,20 +88,31 @@ for rule-based agents), latency, outcome, confidence, cost, trace id.
 
 ## 6. API
 
-Public/player: `GET /v1/challenges` (sections), `GET /v1/challenges/:slug`, `GET /v1/challenges/:slug/entries`,
-`GET /v1/challenges/:slug/leaderboard`, `GET /v1/challenges/:slug/results`, `POST /v1/challenges/:slug/join`,
-`POST /v1/challenges/:slug/submissions`, `POST /v1/challenges/:slug/entries` (enter an existing clip recorded during the window),
-`GET /v1/me/challenges`, `GET /v1/challenges/recommended`, `POST /v1/challenge-submissions/:id/withdraw|appeal|vote`,
-`POST /v1/challenges/:slug/head-to-head`, `POST /v1/challenge-h2h/:id/accept|decline`, `POST /v1/challenges/:slug/scout-picks`.
+Public/player: `GET /v1/challenges` (legacy list), `GET /v1/challenges/hub`, `GET /v1/challenges/recommended`, `GET /v1/challenges/:slug`,
+`GET /v1/challenges/:slug/entries|leaderboard|results`, `POST /v1/challenges/:slug/join`, `POST /v1/challenges/:slug/submissions`
+(new clip), `POST /v1/challenges/:slug/entries` (a clip uploaded during the window), `GET /v1/me/challenges`,
+`POST /v1/challenge-submissions/:id/withdraw|appeal`, `POST|DELETE /v1/challenge-submissions/:id/vote`,
+`POST /v1/challenges/:slug/head-to-heads`, `POST /v1/challenge-head-to-heads/:id/accept|decline`, `POST /v1/challenges/:slug/scout-picks`.
 
-Judges: `GET /v1/judge/queue`, `GET /v1/judge/submissions/:id`, `POST /v1/judge/submissions/:id/review`.
+Judges: `GET /v1/judge/challenges/queue`, `GET /v1/judge/challenge-submissions/:id`, `POST /v1/judge/challenge-submissions/:id/reviews`.
 
-Admin: `GET/POST /v1/admin/challenges`, `PATCH /v1/admin/challenges/:id`, `POST /v1/admin/challenges/:id/rubric`,
-`POST /v1/admin/challenges/:id/transition`, `PUT /v1/admin/challenges/:id/judges`, `POST /v1/admin/challenges/:id/recalculate`,
-`GET /v1/admin/challenges/:id/fraud`, `GET /v1/admin/challenge-appeals`, `POST /v1/admin/challenge-appeals/:id/resolve`,
-`GET /v1/admin/challenge-metrics`.
+Admin: `GET/POST /v1/admin/challenges`, `POST /v1/admin/challenges/templates/install`, `GET /v1/admin/challenges/metrics`,
+`GET/PATCH /v1/admin/challenges/:id`, `POST /v1/admin/challenges/:id/rubric|transition|recalculate`, `PUT /v1/admin/challenges/:id/judges`,
+`GET /v1/admin/challenges/:id/fraud`, `GET /v1/admin/challenge-appeals`, `POST /v1/admin/challenge-appeals/:id/resolve`.
 
 SEO: `GET /v1/seo/challenges/:slug`, challenges in `GET /v1/sitemap`.
+
+## 6b. Web
+
+- `/challenges`: hub (featured, picked for you, trending, ending soon, new, beginner, advanced freestyle, upcoming, results).
+- `/challenges/:slug`: rules, how to film, safety, rubric, join, record/submit (goes to `/upload?slug=`), enter an existing clip,
+  your entries (withdraw, appeal, share result), live/final leaderboard (overall or your country), votes, Scout Picks, results, invite link.
+  Metadata comes from the SEO agent; anything it does not mark indexable is `noindex`.
+- `/challenges/mine`: joined challenges, every entry and its state, XP, streak, badges, personal bests, head-to-heads, appeals.
+- `/upload?challenge=&slug=`: the normal upload wizard plus the entry fields (own count, others in clip and their consent,
+  safety acknowledgement), sent with an idempotency key so a retry never uses another attempt.
+- `/judge`: blind queue (clip, rubric, automatic checks, flags; never the player). `/admin/challenges`: templates, drafts,
+  publish/pause/close/publish results, judges, appeals, metrics and agent costs.
 
 ## 7. Safety and privacy rules
 
