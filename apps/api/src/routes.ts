@@ -18,9 +18,11 @@ import { aiAdminRoutes } from './modules/ai-admin.js';
 import { analyticsRoutes } from './modules/analytics.js';
 import { flagRoutes } from './modules/flags.js';
 import { opsRoutes } from './modules/ops.js';
+import { playRoutes } from './modules/play.js';
 
 export const routes: ApiRoute[] = [
   ...onboardingRoutes, ...profileRoutes, ...mediaRoutes, ...feedRoutes, ...socialRoutes, ...catalogRoutes,
   ...challengeRoutes, ...scoutRoutes, ...moderationRoutes, ...accountRoutes, ...copyrightRoutes,
   ...orgRoutes, ...crmRoutes, ...billingRoutes, ...recommendationRoutes, ...aiAdminRoutes, ...analyticsRoutes, ...flagRoutes, ...opsRoutes,
+  ...playRoutes,
 ];

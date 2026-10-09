@@ -10,3 +10,4 @@ export * from './entitlements.js';
 export * from './nl-query.js';
 export * from './recommendations.js';
 export * from './flags.js';
+export * from './play.js';

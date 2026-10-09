@@ -19,6 +19,7 @@ export const KNOWN_ERROR_CODES = [
   'BILLING_NOT_CONFIGURED', 'ALREADY_SUBSCRIBED', 'CONTACT_SALES', 'PLAN_NOT_PURCHASABLE', 'PRICE_NOT_AVAILABLE', 'COUPON_INVALID',
   'COUPON_NOT_AVAILABLE', 'NO_BILLING_ACCOUNT', 'QUOTA_SCOUT_SEARCHES', 'QUOTA_SHORTLIST_SLOTS', 'QUOTA_ACTIVE_VIDEOS', 'QUOTA_DAILY_UPLOADS',
   'FEATURE_DISABLED',
+  'FRIENDS_ONLY', 'AGE_GROUP_MISMATCH', 'CHALLENGE_OPEN', 'CHALLENGE_CLOSED',
 ] as const;
 export type KnownErrorCode = (typeof KNOWN_ERROR_CODES)[number];
 
@@ -171,6 +172,19 @@ export function createApiClient(opts: ApiClientOptions = {}) {
     search: (q: T.SearchQuery, s?: AbortSignal) => get<T.SearchResult>('/v1/search', q as Query, s),
     discover: (s?: AbortSignal) => get<T.DiscoverView>('/v1/discover', undefined, s),
     radar: (q: T.RadarQuery, s?: AbortSignal) => get<T.RadarPage>('/v1/radar', q as Query, s),
+
+    // play: tactics game, drills, XP, friend challenges
+    playMe: (s?: AbortSignal) => get<T.PlayProfile>('/v1/play/me', undefined, s),
+    startRound: (b: { challengeId?: string } = {}) => send<T.PlayRoundView>('POST', '/v1/play/rounds', b),
+    round: (id: string, s?: AbortSignal) => get<T.PlayRoundView>(`/v1/play/rounds/${e(id)}`, undefined, s),
+    answer: (roundId: string, b: { scenarioId: string; optionId: string }) => send<T.PlayAnswerResponse>('POST', `/v1/play/rounds/${e(roundId)}/answers`, b),
+    logScan: (b: { hits: number; reps: 10 }) => send<T.PlayXpAward>('POST', '/v1/play/scan', b),
+    logDrill: (key: string, b: { count?: number } = {}) => send<T.PlayXpAward>('POST', `/v1/play/drills/${e(key)}/complete`, b),
+    playFriends: (s?: AbortSignal) => get<T.PlayFriendList>('/v1/play/friends', undefined, s),
+    playChallenges: (s?: AbortSignal) => get<T.PlayChallengeList>('/v1/play/challenges', undefined, s),
+    createPlayChallenge: (opponentId: string) => send<T.PlayChallengeView>('POST', '/v1/play/challenges', { opponentId }),
+    declinePlayChallenge: (id: string) => send<void>('POST', `/v1/play/challenges/${e(id)}/decline`),
+
     challenges: (s?: AbortSignal) => get<T.ChallengeList>('/v1/challenges', undefined, s),
     challenge: (slug: string, s?: AbortSignal) => get<T.ChallengeView>(`/v1/challenges/${e(slug)}`, undefined, s),
     challengeEntries: (slug: string, q?: { cursor?: string }, s?: AbortSignal) => get<T.VideoPage>(`/v1/challenges/${e(slug)}/entries`, q, s),
