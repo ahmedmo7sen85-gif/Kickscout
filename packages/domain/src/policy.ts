@@ -49,6 +49,13 @@ export type Action =
   | { kind: 'moderation.act' }
   | { kind: 'verification.decide' }
   | { kind: 'challenge.manage' }
+  /**
+   * Judging a challenge entry. `assigned`: the actor is on that challenge's judge list. `clipPublic`:
+   * the entry's video is public, so an outside judge may see it; anything else is for staff only.
+   */
+  | { kind: 'challenge.judge'; assigned: boolean; ownerId: string; clipPublic: boolean }
+  /** Recording a Scout Pick in a challenge (verified scouts only). */
+  | { kind: 'challenge.scout_pick' }
   /** Founding an organization (club, academy, agency, school). */
   | { kind: 'org.create' }
   /** Acting inside an organization; `role` is the actor's membership role there (null: not a member). */
@@ -171,6 +178,17 @@ export function can(actor: Actor, action: Action): Decision {
         return deny('SCOUT_VERIFICATION_REQUIRED', 'verified scouts only');
       }
       return allow;
+
+    case 'challenge.judge': {
+      if (isSelfOrGuardian(actor, action.ownerId)) return deny('CONFLICT_OF_INTEREST', 'you cannot judge your own or your child’s entry');
+      const staff = isStaff(actor);
+      if (!staff && !action.assigned) return deny('FORBIDDEN', 'judges only');
+      if (!staff && !action.clipPublic) return deny('FORBIDDEN', 'only staff judge entries that are not public');
+      return actor.mfa ? allow : deny('MFA_REQUIRED', 'judging requires MFA');
+    }
+
+    case 'challenge.scout_pick':
+      return has(actor, 'scout') ? allow : deny('SCOUT_VERIFICATION_REQUIRED', 'verified scouts only');
 
     case 'verification.decide':
     case 'challenge.manage':

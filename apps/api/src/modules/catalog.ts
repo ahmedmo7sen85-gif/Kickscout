@@ -8,7 +8,7 @@ import { route } from '../platform/route.js';
 import { notFound } from '../platform/errors.js';
 import { discoverable, pageOfVideos, toVideoViews, videoQuery } from './media.js';
 import { playerCards, relationTo } from './views.js';
-import { challengeViews } from './challenges.js';
+import { challengeViews, listable } from './challenge-views.js';
 
 const likePattern = (q: string) => `%${q.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
 
@@ -202,7 +202,7 @@ export const catalogRoutes = [
           .where('videos.status', '=', 'published').where('videos.visibility', '=', 'public')
           .where('videos.published_at', '>', sql<Date>`now() - interval '7 days'`)
           .groupBy('video_hashtags.tag').orderBy('n', 'desc').limit(12).execute(),
-        challengeViews(ctx.deps, (q) => q.where('challenges.ends_at', '>', ctx.deps.now()).orderBy('challenges.starts_at').limit(6)),
+        challengeViews(ctx.deps, (q) => listable(q).where('challenges.ends_at', '>', ctx.deps.now()).orderBy('challenges.starts_at').limit(6)),
         radar(ctx.deps, viewer, { limit: 6, category: 'rising' }),
         discoverable(videoQuery(db), viewer).orderBy('videos.published_at', 'desc').limit(12).execute(),
       ]);

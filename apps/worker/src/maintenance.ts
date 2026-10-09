@@ -5,6 +5,8 @@ import type { VideoStorage } from './storage/storage.js';
 import { playbackKey, thumbnailKey } from './storage/storage.js';
 import { runSavedSearchAlerts } from './alerts.js';
 import { rollupAnalytics } from './analytics.js';
+import { runChallengeOperations } from './challenges/operations.js';
+import type { ChallengeOpsReport } from './challenges/operations.js';
 
 export interface MaintenanceOptions {
   /** Days a published video's original is kept after publishing (for re-processing), before it is removed. */
@@ -28,6 +30,8 @@ export interface MaintenanceReport {
   analyticsDaysRolled: number;
   /** Raw analytics events deleted after their 180-day retention (their days are rolled up first). */
   analyticsEventsDeleted: number;
+  /** The Challenge Operations Agent's run (null when it failed; see `errors`). */
+  challenges: ChallengeOpsReport | null;
   errors: number;
 }
 
@@ -44,7 +48,7 @@ export async function runMaintenance(
   opts: MaintenanceOptions = DEFAULT_MAINTENANCE,
 ): Promise<MaintenanceReport> {
   const report: MaintenanceReport = {
-    abandonedUploads: 0, originalsPurged: 0, deliveryPurged: 0, rateLimitRowsPruned: 0, alertNotifications: 0, analyticsDaysRolled: 0, analyticsEventsDeleted: 0, errors: 0,
+    abandonedUploads: 0, originalsPurged: 0, deliveryPurged: 0, rateLimitRowsPruned: 0, alertNotifications: 0, analyticsDaysRolled: 0, analyticsEventsDeleted: 0, challenges: null, errors: 0,
   };
   const hoursAgo = (h: number) => new Date(now.getTime() - h * 3_600_000);
 
@@ -119,6 +123,13 @@ export async function runMaintenance(
   } catch (err) {
     report.errors++;
     log.warn('analytics rollup failed', { error: (err as Error).message });
+  }
+
+  try {
+    report.challenges = await runChallengeOperations(db, log, now);
+  } catch (err) {
+    report.errors++;
+    log.warn('challenge operations failed', { error: (err as Error).message });
   }
 
   log.info('maintenance finished', { ...report });

@@ -4,7 +4,7 @@ import type { Transaction } from 'kysely';
 import type { Database, DB } from '@fp/db';
 import {
   CopyrightClaimView, CounterNoticeView, UserStatusRequest,
-  AdminStats, AuditLogPage, ChallengeView, CreateChallengeRequest, JurisdictionRuleRequest, ModerationCaseList, ModerationCaseQuery,
+  AdminStats, AuditLogPage, JurisdictionRuleRequest, ModerationCaseList, ModerationCaseQuery,
   ModerationDecisionRequest, VerificationDecisionRequest, VerificationRequestList,
 } from '@fp/contracts';
 import { route } from '../platform/route.js';
@@ -12,7 +12,6 @@ import { ApiError, conflict, notFound } from '../platform/errors.js';
 import { newId } from '../platform/ids.js';
 import { audit, emit, notify } from '../platform/events.js';
 import { toVideoViews, videoQuery } from './media.js';
-import { challengeViews } from './challenges.js';
 import { runSavedSearchAlerts } from '@fp/worker/alerts';
 
 /** Opens a moderation case, or merges into the open case for the same target. */
@@ -317,27 +316,6 @@ export const moderationRoutes = [
           metadata: r.metadata as Record<string, unknown>, createdAt: r.created_at.toISOString(),
         })),
       };
-    },
-  ),
-
-  route(
-    { method: 'post', path: '/v1/admin/challenges', summary: 'Create a challenge', tag: 'admin', auth: 'user', body: CreateChallengeRequest, response: ChallengeView, status: 201 },
-    async (ctx) => {
-      ctx.authorize({ kind: 'challenge.manage' });
-      const b = ctx.body;
-      if (new Date(b.endsAt) <= new Date(b.startsAt)) throw new ApiError(400, 'INVALID_DATES', 'a challenge must end after it starts');
-      const id = newId();
-      await ctx.deps.db.transaction().execute(async (tx) => {
-        const taken = await tx.selectFrom('challenges').select('id').where('slug', '=', b.slug).executeTakeFirst();
-        if (taken) throw conflict('SLUG_TAKEN', 'that slug is taken');
-        await tx.insertInto('challenges').values({
-          id, slug: b.slug, title: JSON.stringify(b.title), description: JSON.stringify(b.description), skill_key: b.skillKey ?? null,
-          hashtag: b.hashtag ?? null, starts_at: new Date(b.startsAt), ends_at: new Date(b.endsAt), created_by: ctx.me().userId,
-        }).execute();
-        await audit(tx, { actorId: ctx.me().userId, action: 'challenge.created', targetKind: 'challenge', targetId: id });
-        await emit(tx, 'challenge.created', { challengeId: id });
-      });
-      return (await challengeViews(ctx.deps, (q) => q.where('challenges.id', '=', id)))[0]!;
     },
   ),
 

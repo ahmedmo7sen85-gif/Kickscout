@@ -11,3 +11,7 @@ export * from './nl-query.js';
 export * from './recommendations.js';
 export * from './flags.js';
 export * from './play.js';
+export * from './challenge-rubric.js';
+export * from './challenge-rules.js';
+export * from './challenge-agents.js';
+export * from './challenge-catalog.js';

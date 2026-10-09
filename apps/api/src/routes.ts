@@ -6,6 +6,8 @@ import { feedRoutes } from './modules/feed.js';
 import { socialRoutes } from './modules/social.js';
 import { catalogRoutes } from './modules/catalog.js';
 import { challengeRoutes } from './modules/challenges.js';
+import { challengeJudgingRoutes } from './modules/challenge-judging.js';
+import { challengeAdminRoutes } from './modules/challenge-admin.js';
 import { scoutRoutes } from './modules/scout.js';
 import { moderationRoutes } from './modules/moderation.js';
 import { accountRoutes } from './modules/account.js';
@@ -22,7 +24,7 @@ import { playRoutes } from './modules/play.js';
 
 export const routes: ApiRoute[] = [
   ...onboardingRoutes, ...profileRoutes, ...mediaRoutes, ...feedRoutes, ...socialRoutes, ...catalogRoutes,
-  ...challengeRoutes, ...scoutRoutes, ...moderationRoutes, ...accountRoutes, ...copyrightRoutes,
+  ...challengeRoutes, ...challengeJudgingRoutes, ...challengeAdminRoutes, ...scoutRoutes, ...moderationRoutes, ...accountRoutes, ...copyrightRoutes,
   ...orgRoutes, ...crmRoutes, ...billingRoutes, ...recommendationRoutes, ...aiAdminRoutes, ...analyticsRoutes, ...flagRoutes, ...opsRoutes,
   ...playRoutes,
 ];

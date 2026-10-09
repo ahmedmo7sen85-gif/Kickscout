@@ -14,7 +14,7 @@ describe('analytics event registry', () => {
   });
 
   it('allows only client events from the browser', () => {
-    expect(CLIENT_EVENT_NAMES).toEqual(['page_viewed', 'cta_clicked', 'locale_changed', 'share_clicked', 'video_completed']);
+    expect(CLIENT_EVENT_NAMES).toEqual(['page_viewed', 'cta_clicked', 'locale_changed', 'share_clicked', 'video_completed', 'challenge_shared']);
     expect(Object.entries(ANALYTICS_EVENTS).filter(([, s]) => s.client).map(([n]) => n)).toEqual([...CLIENT_EVENT_NAMES]);
     expect(prepareEvent('contact_requested', { contactRequestId: id, playerId: id, origin: 'profile' }, { ...server, source: 'client' }))
       .toEqual({ record: false, reason: 'not_allowed_from_client' });

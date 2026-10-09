@@ -14,3 +14,4 @@ export * from './worker.js';
 export * from './maintenance.js';
 export * from './alerts.js';
 export * from './analytics.js';
+export * from './challenges/index.js';
