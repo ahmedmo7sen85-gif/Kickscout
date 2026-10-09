@@ -2,12 +2,13 @@
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { CapabilityBadge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { AuthNotConfigured } from '@/components/ui/States';
 import { authConfigured } from '@/lib/env';
 import { useI18n } from '@/lib/i18n/provider';
+import { readNext, withNext } from '@/lib/next-path';
 import { getSupabase } from '@/lib/supabase';
 
 /** Email/password and Google via Supabase Auth. Apple is shown with its Coming Soon label. */
@@ -19,6 +20,8 @@ export function AuthForm({ mode }: { mode: 'login' | 'signup' }) {
   const [busy, setBusy] = useState<'email' | 'google' | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
+  const [next, setNext] = useState<string | null>(null);
+  useEffect(() => { setNext(readNext()); }, []);
 
   if (!authConfigured) {
     return (
@@ -29,7 +32,7 @@ export function AuthForm({ mode }: { mode: 'login' | 'signup' }) {
     );
   }
 
-  const redirectTo = () => `${window.location.origin}/auth/callback`;
+  const redirectTo = () => withNext(`${window.location.origin}/auth/callback`, next);
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     const sb = getSupabase();
@@ -39,11 +42,11 @@ export function AuthForm({ mode }: { mode: 'login' | 'signup' }) {
       if (mode === 'login') {
         const { error: err } = await sb.auth.signInWithPassword({ email, password });
         if (err) { setError(t.auth.invalid); return; }
-        router.push('/home');
+        router.push(next ?? '/home');
       } else {
         const { data, error: err } = await sb.auth.signUp({ email, password, options: { emailRedirectTo: redirectTo() } });
         if (err) { setError(err.message); return; }
-        if (data.session) router.push('/onboarding'); else setInfo(t.auth.checkEmail);
+        if (data.session) router.push(withNext('/onboarding', next)); else setInfo(t.auth.checkEmail);
       }
     } finally { setBusy(null); }
   };
@@ -87,8 +90,8 @@ export function AuthForm({ mode }: { mode: 'login' | 'signup' }) {
         <Button type="submit" variant="primary" block loading={busy === 'email'}>{mode === 'login' ? t.auth.loginCta : t.auth.signupCta}</Button>
       </form>
       <p className="small muted">
-        {mode === 'login' ? <>{t.auth.noAccount} <Link className="link" href="/signup">{t.common.signUp}</Link></>
-          : <>{t.auth.haveAccount} <Link className="link" href="/login">{t.common.logIn}</Link></>}
+        {mode === 'login' ? <>{t.auth.noAccount} <Link className="link" href={withNext('/signup', next)}>{t.common.signUp}</Link></>
+          : <>{t.auth.haveAccount} <Link className="link" href={withNext('/login', next)}>{t.common.logIn}</Link></>}
       </p>
     </div>
   );
