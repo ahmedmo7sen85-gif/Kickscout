@@ -786,6 +786,7 @@ export const fr: Dict = {
     loginCta: 'Se connecter',
     signupCta: 'Créer un compte',
     google: 'Continuer avec Google',
+    googleUnavailable: "La connexion avec Google n'est pas encore activée. Utilisez votre e-mail et votre mot de passe pour le moment.",
     apple: 'Continuer avec Apple',
     notConfiguredTitle: 'La connexion n’est pas configurée',
     notConfiguredText: 'Ce déploiement n’a pas encore de fournisseur d’authentification (NEXT_PUBLIC_SUPABASE_URL et NEXT_PUBLIC_SUPABASE_ANON_KEY). La navigation fonctionne quand même.',

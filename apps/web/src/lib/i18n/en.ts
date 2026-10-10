@@ -781,6 +781,7 @@ export const en = {
     loginCta: 'Log in',
     signupCta: 'Create account',
     google: 'Continue with Google',
+    googleUnavailable: 'Google sign-in is not switched on yet. Please use email and password for now.',
     apple: 'Continue with Apple',
     notConfiguredTitle: 'Sign-in is not configured',
     notConfiguredText: 'This deployment has no authentication provider set up yet (NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY). Browsing still works.',

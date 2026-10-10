@@ -786,6 +786,7 @@ export const es: Dict = {
     loginCta: 'Iniciar sesión',
     signupCta: 'Crear cuenta',
     google: 'Continuar con Google',
+    googleUnavailable: 'El inicio de sesión con Google aún no está activado. Por ahora usa tu correo y contraseña.',
     apple: 'Continuar con Apple',
     notConfiguredTitle: 'El inicio de sesión no está configurado',
     notConfiguredText: 'Esta instalación todavía no tiene un proveedor de autenticación configurado (NEXT_PUBLIC_SUPABASE_URL y NEXT_PUBLIC_SUPABASE_ANON_KEY). Puedes seguir navegando.',

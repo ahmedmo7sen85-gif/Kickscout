@@ -6,9 +6,24 @@ import { useState, type FormEvent } from 'react';
 import { CapabilityBadge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { AuthNotConfigured } from '@/components/ui/States';
-import { authConfigured } from '@/lib/env';
+import { authConfigured, publicEnv } from '@/lib/env';
 import { useI18n } from '@/lib/i18n/provider';
 import { getSupabase } from '@/lib/supabase';
+
+/**
+ * Whether Google is switched on in Supabase Auth (public settings endpoint). null when it cannot
+ * be told, in which case the sign-in goes ahead and Supabase reports any problem itself.
+ */
+export async function googleEnabled(): Promise<boolean | null> {
+  try {
+    const r = await fetch(`${publicEnv.supabaseUrl}/auth/v1/settings`, { headers: { apikey: publicEnv.supabaseAnonKey } });
+    if (!r.ok) return null;
+    const body = (await r.json()) as { external?: { google?: boolean } };
+    return typeof body.external?.google === 'boolean' ? body.external.google : null;
+  } catch {
+    return null;
+  }
+}
 
 /** Email/password and Google via Supabase Auth. Apple is shown with its Coming Soon label. */
 export function AuthForm({ mode }: { mode: 'login' | 'signup' }) {
@@ -51,6 +66,8 @@ export function AuthForm({ mode }: { mode: 'login' | 'signup' }) {
     const sb = getSupabase();
     if (!sb) return;
     setBusy('google'); setError(null);
+    // Leaving for Supabase while the provider is off ends on a raw JSON error page, so ask first.
+    if ((await googleEnabled()) === false) { setError(t.auth.googleUnavailable); setBusy(null); return; }
     const { error: err } = await sb.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: redirectTo() } });
     if (err) { setError(err.message); setBusy(null); }
   };

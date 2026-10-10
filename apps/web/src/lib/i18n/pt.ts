@@ -786,6 +786,7 @@ export const pt: Dict = {
     loginCta: 'Entrar',
     signupCta: 'Criar conta',
     google: 'Continuar com Google',
+    googleUnavailable: 'O login com Google ainda não está ativado. Por enquanto, use e-mail e senha.',
     apple: 'Continuar com Apple',
     notConfiguredTitle: 'O login não está configurado',
     notConfiguredText: 'Esta implantação ainda não tem um provedor de autenticação configurado (NEXT_PUBLIC_SUPABASE_URL e NEXT_PUBLIC_SUPABASE_ANON_KEY). A navegação continua funcionando.',

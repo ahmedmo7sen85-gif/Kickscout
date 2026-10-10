@@ -783,6 +783,7 @@ export const ar: Dict = {
     loginCta: 'تسجيل الدخول',
     signupCta: 'إنشاء حساب',
     google: 'المتابعة باستخدام Google',
+    googleUnavailable: 'تسجيل الدخول باستخدام Google غير مفعّل بعد. يُرجى استخدام البريد الإلكتروني وكلمة المرور حاليًا.',
     apple: 'المتابعة باستخدام Apple',
     notConfiguredTitle: 'تسجيل الدخول غير مُعدّ',
     notConfiguredText: 'لم يُعدّ مزوّد مصادقة لهذا النشر بعد (NEXT_PUBLIC_SUPABASE_URL و NEXT_PUBLIC_SUPABASE_ANON_KEY). التصفح ما زال يعمل.',
