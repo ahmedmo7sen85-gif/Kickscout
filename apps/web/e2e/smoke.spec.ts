@@ -70,22 +70,22 @@ test('Arabic locale cookie sets dir="rtl" and lang="ar"', async ({ page, context
   await page.screenshot({ path: `${SHOTS}landing-ar-390.png` });
 });
 
-test('mobile bottom nav has the five items at 390px', async ({ page }) => {
+test('mobile bottom nav has the six items at 390px', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('/discover');
   const nav = page.getByTestId('bottom-nav');
   await expect(nav).toBeVisible();
   const labels = await nav.getByRole('link').allInnerTexts();
-  expect(labels.map((l) => l.trim())).toEqual(['Home', 'Discover', 'Upload', 'Talent Radar', 'Profile']);
+  expect(labels.map((l) => l.trim())).toEqual(['Home', 'Discover', 'Scores', 'Upload', 'Talent Radar', 'Profile']);
   await page.setViewportSize({ width: 1440, height: 900 });
   await expect(nav).toBeHidden();
   const top = page.getByRole('navigation', { name: 'Main' });
-  for (const name of ['Home', 'Discover', 'Talent Radar', 'Challenges', 'Upload', 'For Players', 'For Scouts', 'Notifications', 'Profile']) {
+  for (const name of ['Home', 'Discover', 'Scores', 'Talent Radar', 'Challenges', 'Upload', 'My teams', 'For Players', 'For Scouts', 'Notifications', 'Profile']) {
     await expect(top.getByRole('link', { name, exact: true })).toBeVisible();
   }
 });
 
-for (const path of ['/home', '/discover', '/radar', '/challenges', '/challenges/elastico', '/search?q=elastico',
+for (const path of ['/home', '/discover', '/radar', '/scores', '/scores/match/fx-1', '/scores/team/t-river', '/challenges', '/challenges/elastico', '/search?q=elastico',
   '/u/demo_winger', '/v/00000000-0000-4000-8000-000000000101']) {
   test(`shows an error state, not a crash, when the API is unreachable: ${path}`, async ({ page }) => {
     const errors = collectErrors(page);

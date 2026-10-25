@@ -101,7 +101,7 @@ No authorization bypass, secret leak or RLS gap was found.
 | P0 | Keep every existing test green; build on `main` without touching PRs #1-#4 (new migration is `0013`) | Done |
 | P1 | Football data layer: provider interface, normalised types, strict status mapping, SportScore + football-data.org adapters, shared Postgres cache with stale-if-error, provider health | Done |
 | P1 | Scores page with live / upcoming / finished filters, date navigation, competition filter, timezone shown; match, team and competition pages; source + last-updated on every page; required attribution | Done |
-| P1 | Football news | Not built: no reliable free news API was verified. Documented in the cost doc with the adapter shape to add |
+| P1 | Football news | Not built: no reliable free news API was verified. Documented in `COST_AND_SERVICES.md`; `ARCHITECTURE.md` explains how a provider plugs in |
 | P2 | Favourite teams and competitions (DB-backed, ownership enforced, local preview before sign-up, merged on sign-in) | Done |
 | P2 | Web Push: service worker, subscription storage, per-category settings, VAPID, server sender, dedupe, expired-endpoint cleanup, test notification, reconciliation job | Done; the scheduler needs owner approval to switch on |
 | P2 | Supabase advisor fixes | Done in migration 0013 (additive, safe) |

@@ -180,6 +180,7 @@ export async function runFootballAlerts(deps: Deps, log: Logger): Promise<AlertR
   // Housekeeping: snapshots of long-finished matches and old delivery rows.
   await db.deleteFrom('football_match_states').where('observed_at', '<', new Date(now.getTime() - 3 * 86_400_000)).execute();
   await db.deleteFrom('push_deliveries').where('created_at', '<', new Date(now.getTime() - 14 * 86_400_000)).execute();
+  await db.deleteFrom('football_cache').where('fresh_until', '<', new Date(now.getTime() - 7 * 86_400_000)).execute();
   log.info({ ...report }, 'football alerts run');
   return report;
 }

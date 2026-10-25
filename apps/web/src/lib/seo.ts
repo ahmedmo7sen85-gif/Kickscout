@@ -6,7 +6,7 @@
 import type { Metadata, MetadataRoute } from 'next';
 import type { Dict } from './i18n';
 import { LEGAL_DOCS } from './legal';
-import type { SeoProfileView, SitemapView, VideoView } from './types';
+import type { MatchDetailResponse, SeoProfileView, SitemapView, VideoView } from './types';
 
 /** The brand share card rendered by `app/brand-image/route.tsx`. */
 export const BRAND_IMAGE = { url: '/brand-image', width: 1200, height: 630 } as const;
@@ -92,13 +92,13 @@ export function videoJsonLd(v: VideoView, siteUrl: string, description: string) 
 
 /** Public pages anyone may index. Signed-in areas, staff tools and forms are never listed. */
 export const STATIC_SITEMAP_PATHS = [
-  '/', '/home', '/discover', '/radar', '/challenges', '/search', '/for-players', '/for-scouts', '/pricing', '/safety', '/legal', '/legal/takedown',
+  '/', '/home', '/discover', '/radar', '/scores', '/challenges', '/search', '/for-players', '/for-scouts', '/pricing', '/safety', '/legal', '/legal/takedown',
   ...LEGAL_DOCS.map((d) => `/legal/${d.slug}`),
 ] as const;
 
 /** Paths robots.txt keeps crawlers out of. */
 export const PRIVATE_PATHS = [
-  '/admin', '/settings', '/notifications', '/scout', '/org', '/onboarding', '/auth', '/guardian', '/upload', '/profile', '/login', '/signup',
+  '/admin', '/settings', '/notifications', '/scout', '/org', '/onboarding', '/auth', '/guardian', '/upload', '/profile', '/login', '/signup', '/following',
   '/legal/counter-notice',
 ] as const;
 
@@ -107,11 +107,35 @@ export function buildSitemap(siteUrl: string, data: SitemapView | null, now = ne
   const entries: MetadataRoute.Sitemap = STATIC_SITEMAP_PATHS.map((p) => ({
     url: `${siteUrl}${p === '/' ? '' : p}` || siteUrl,
     lastModified: now,
-    changeFrequency: p === '/home' || p === '/discover' || p === '/radar' ? 'hourly' : 'weekly',
+    changeFrequency: p === '/home' || p === '/discover' || p === '/radar' || p === '/scores' ? 'hourly' : 'weekly',
     priority: p === '/' ? 1 : 0.6,
   }));
   if (!data) return entries;
   for (const p of data.profiles) entries.push({ url: `${siteUrl}/u/${encodeURIComponent(p.handle)}`, lastModified: new Date(p.updatedAt), changeFrequency: 'daily', priority: 0.7 });
   for (const v of data.videos) entries.push({ url: `${siteUrl}/v/${encodeURIComponent(v.id)}`, lastModified: new Date(v.updatedAt), changeFrequency: 'weekly', priority: 0.5 });
   return entries;
+}
+
+const EVENT_STATUS: Partial<Record<MatchDetailResponse['match']['status'], string>> = {
+  scheduled: 'https://schema.org/EventScheduled',
+  postponed: 'https://schema.org/EventPostponed',
+  cancelled: 'https://schema.org/EventCancelled',
+};
+
+/** SportsEvent data for a real match page. Never built for the test fixture provider. */
+export function matchJsonLd(r: MatchDetailResponse, siteUrl: string) {
+  const m = r.match;
+  const status = EVENT_STATUS[m.status];
+  return {
+    '@context': 'https://schema.org',
+    '@type': 'SportsEvent',
+    name: `${m.home.name} v ${m.away.name}`,
+    sport: 'Football',
+    startDate: m.kickoff,
+    url: `${siteUrl}/scores/match/${encodeURIComponent(m.id)}`,
+    ...(status ? { eventStatus: status } : {}),
+    ...(m.competition.name ? { superEvent: { '@type': 'SportsEvent', name: m.competition.name } } : {}),
+    homeTeam: { '@type': 'SportsTeam', name: m.home.name },
+    awayTeam: { '@type': 'SportsTeam', name: m.away.name },
+  };
 }
