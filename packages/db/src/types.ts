@@ -252,6 +252,20 @@ export interface CrmStageHistory {
   to_stage: string;
 }
 
+export interface FavoriteCompetitions {
+  competition_id: string;
+  created_at: Generated<Timestamp>;
+  provider: string;
+  user_id: string;
+}
+
+export interface FavoriteTeams {
+  created_at: Generated<Timestamp>;
+  provider: string;
+  team_id: string;
+  user_id: string;
+}
+
 export interface FeatureFlags {
   audience: Generated<Json>;
   client_visible: Generated<boolean>;
@@ -268,6 +282,58 @@ export interface Follows {
   created_at: Generated<Timestamp>;
   followee_id: string;
   follower_id: string;
+}
+
+export interface FootballAlertPreferences {
+  enabled: Generated<boolean>;
+  final_result: Generated<boolean>;
+  goal: Generated<boolean>;
+  halftime: Generated<boolean>;
+  kickoff: Generated<boolean>;
+  lineups: Generated<boolean>;
+  starting_soon: Generated<boolean>;
+  updated_at: Generated<Timestamp>;
+  user_id: string;
+}
+
+export interface FootballCache {
+  failures: Generated<number>;
+  fetched_at: Timestamp | null;
+  fresh_until: Timestamp | null;
+  key: string;
+  last_error: string | null;
+  last_error_at: Timestamp | null;
+  payload: Json | null;
+  provider: string;
+  retry_after: Timestamp | null;
+}
+
+export interface FootballCompetitions {
+  area: string | null;
+  id: string;
+  last_seen_at: Generated<Timestamp>;
+  logo_url: string | null;
+  name: string;
+  provider: string;
+}
+
+export interface FootballMatchStates {
+  away_score: number | null;
+  home_score: number | null;
+  kickoff: Timestamp;
+  lineups_confirmed: Generated<boolean>;
+  match_id: string;
+  observed_at: Generated<Timestamp>;
+  provider: string;
+  status: string;
+}
+
+export interface FootballTeams {
+  id: string;
+  last_seen_at: Generated<Timestamp>;
+  logo_url: string | null;
+  name: string;
+  provider: string;
 }
 
 export interface GuardianInvitations {
@@ -471,6 +537,30 @@ export interface Profiles {
   updated_at: Generated<Timestamp>;
   user_id: string;
   verified_at: Timestamp | null;
+}
+
+export interface PushDeliveries {
+  alert_key: string;
+  attempts: Generated<number>;
+  category: string;
+  created_at: Generated<Timestamp>;
+  last_error: string | null;
+  payload: Json;
+  status: Generated<string>;
+  subscription_id: string;
+  updated_at: Generated<Timestamp>;
+}
+
+export interface PushSubscriptions {
+  auth: string;
+  created_at: Generated<Timestamp>;
+  endpoint: string;
+  failures: Generated<number>;
+  id: string;
+  last_success_at: Timestamp | null;
+  locale: Generated<string>;
+  p256dh: string;
+  user_id: string;
 }
 
 export interface QualifiedDiscoveries {
@@ -727,8 +817,15 @@ export interface DB {
   crm_entries: CrmEntries;
   crm_notes: CrmNotes;
   crm_stage_history: CrmStageHistory;
+  favorite_competitions: FavoriteCompetitions;
+  favorite_teams: FavoriteTeams;
   feature_flags: FeatureFlags;
   follows: Follows;
+  football_alert_preferences: FootballAlertPreferences;
+  football_cache: FootballCache;
+  football_competitions: FootballCompetitions;
+  football_match_states: FootballMatchStates;
+  football_teams: FootballTeams;
   guardian_invitations: GuardianInvitations;
   guardian_relationships: GuardianRelationships;
   idempotency_keys: IdempotencyKeys;
@@ -747,6 +844,8 @@ export interface DB {
   player_profiles: PlayerProfiles;
   privacy_settings: PrivacySettings;
   profiles: Profiles;
+  push_deliveries: PushDeliveries;
+  push_subscriptions: PushSubscriptions;
   qualified_discoveries: QualifiedDiscoveries;
   rate_limit_hits: RateLimitHits;
   recommendation_preferences: RecommendationPreferences;

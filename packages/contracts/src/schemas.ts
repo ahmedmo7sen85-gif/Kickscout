@@ -516,6 +516,13 @@ export const AccountExport = z.object({
     historyResetAt: z.iso.datetime().nullable(),
     notInterested: z.array(z.object({ kind: z.enum(['video', 'player', 'skill']), id: z.string(), at: z.iso.datetime() })),
   }).nullable().default(null),
+  /** Followed teams and competitions, match alert settings and when push devices were registered (never their endpoints). */
+  football: z.object({
+    teams: z.array(z.object({ id: z.string(), name: z.string() })),
+    competitions: z.array(z.object({ id: z.string(), name: z.string() })),
+    alerts: z.object({ enabled: z.boolean(), categories: z.record(z.string(), z.boolean()) }),
+    pushDevices: z.array(z.object({ registeredAt: z.iso.datetime(), locale: z.string() })),
+  }).nullable().default(null),
   scout: z.object({
     shortlists: z.array(z.object({ id: Id, name: z.string(), playerIds: z.array(Id), createdAt: z.iso.datetime() })),
     notes: z.array(z.object({ id: Id, playerId: Id, body: z.string(), createdAt: z.iso.datetime() })),

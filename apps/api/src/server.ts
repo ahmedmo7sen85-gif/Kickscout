@@ -8,6 +8,8 @@ import { StripePaymentProvider } from './platform/billing/stripe.js';
 import type { Deps } from './deps.js';
 import { AiRouter, ClaudeProvider, dbCallRecorder, routingFromEnv } from '@fp/ai';
 import { newId } from './platform/ids.js';
+import { FootballService, footballProviderFromConfig } from './platform/football.js';
+import { pushSenderFromConfig } from './platform/push.js';
 
 /** Builds the configured app; shared by the long-running server (main.ts) and the Vercel function (vercel.ts). */
 export async function createServer(opts: { poolSize?: number } = {}) {
@@ -35,6 +37,10 @@ export async function createServer(opts: { poolSize?: number } = {}) {
     dobKey: Buffer.from(config.DOB_ENCRYPTION_KEY, 'base64'),
     now: () => new Date(),
   };
+
+  const provider = footballProviderFromConfig(config);
+  deps.football = provider ? new FootballService(provider, db, deps.now, { warn: (o, m) => console.warn(JSON.stringify({ level: 'warn', msg: m, ...o })) }) : null;
+  deps.push = pushSenderFromConfig(config);
 
   const app = await buildApp(deps);
   if (config.MAILER !== 'log') throw new Error('MAILER=ses is not implemented yet');

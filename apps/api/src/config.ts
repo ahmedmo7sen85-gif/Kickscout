@@ -62,10 +62,37 @@ const Env = z
      */
     NL_SCOUT_SEARCH: z.enum(['on', 'off']).default('off'),
     FOR_YOU_PERSONALIZATION: z.enum(['on', 'off']).default('off'),
+    /**
+     * Football data source for scores, match pages and alerts. `sportscore` needs no key (its free
+     * tier requires the visible attribution the web app shows); `football-data` needs
+     * FOOTBALL_DATA_API_KEY; `fixture` is invented test data and is refused in production; `off`
+     * hides the football pages' data and says so.
+     */
+    FOOTBALL_PROVIDER: z.enum(['sportscore', 'football-data', 'fixture', 'off']).default('sportscore'),
+    FOOTBALL_DATA_API_KEY: unsetIfEmpty(z.string().min(10).optional()),
+    /**
+     * Web Push (VAPID). Generate once with `npx web-push generate-vapid-keys`. The private key stays
+     * on the server; the public key is served to browsers by GET /v1/push/config. Set all three or none.
+     */
+    VAPID_PUBLIC_KEY: unsetIfEmpty(z.string().regex(/^[A-Za-z0-9_-]{80,100}$/, 'must be a URL-safe base64 VAPID public key').optional()),
+    VAPID_PRIVATE_KEY: unsetIfEmpty(z.string().regex(/^[A-Za-z0-9_-]{40,50}$/, 'must be a URL-safe base64 VAPID private key').optional()),
+    VAPID_SUBJECT: unsetIfEmpty(z.string().regex(/^(mailto:\S+@\S+|https:\/\/\S+)$/, 'must be mailto: or https:').optional()),
   })
   .refine((e) => Boolean(e.STRIPE_SECRET_KEY) === Boolean(e.STRIPE_WEBHOOK_SECRET), {
     message: 'set STRIPE_SECRET_KEY and STRIPE_WEBHOOK_SECRET together (payments cannot be confirmed without the webhook secret)',
     path: ['STRIPE_WEBHOOK_SECRET'],
+  })
+  .refine((e) => e.FOOTBALL_PROVIDER !== 'football-data' || Boolean(e.FOOTBALL_DATA_API_KEY), {
+    message: 'FOOTBALL_PROVIDER=football-data needs FOOTBALL_DATA_API_KEY',
+    path: ['FOOTBALL_DATA_API_KEY'],
+  })
+  .refine((e) => !(e.NODE_ENV === 'production' && e.FOOTBALL_PROVIDER === 'fixture'), {
+    message: 'FOOTBALL_PROVIDER=fixture is invented test data and cannot run in production',
+    path: ['FOOTBALL_PROVIDER'],
+  })
+  .refine((e) => [e.VAPID_PUBLIC_KEY, e.VAPID_PRIVATE_KEY, e.VAPID_SUBJECT].filter(Boolean).length % 3 === 0, {
+    message: 'set VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY and VAPID_SUBJECT together',
+    path: ['VAPID_PRIVATE_KEY'],
   })
   .refine((e) => !(e.NODE_ENV === 'production' && e.MAILER === 'log' && e.ALLOW_LOG_MAILER !== 'yes'), {
     message: 'MAILER=log is for development only; configure a real mailer in production',
