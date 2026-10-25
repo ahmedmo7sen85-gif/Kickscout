@@ -14,7 +14,7 @@ export function Logo() {
 }
 
 /**
- * Desktop: Home, Discover, Talent Radar, Challenges, Upload, then For Players, For Scouts,
+ * Desktop: Home, Discover, Scores, Talent Radar, Challenges, Upload, then My teams, For Players, For Scouts,
  * Notifications, Profile. Phones get a compact bar; the bottom nav carries the main items.
  */
 export function TopNav() {
@@ -27,6 +27,7 @@ export function TopNav() {
   const primary = [
     { href: '/home', label: t.nav.home },
     { href: '/discover', label: t.nav.discover },
+    { href: '/scores', label: t.nav.scores },
     { href: '/radar', label: t.nav.radar },
     { href: '/challenges', label: t.nav.challenges },
   ];
@@ -50,6 +51,9 @@ export function TopNav() {
           </li>
         </ul>
         <ul className="top-nav__secondary">
+          <li className="top-nav__desktop">
+            <Link href="/following" className={`top-nav__icon${isActive(pathname, '/following') ? ' is-active' : ''}`} aria-label={t.nav.following} title={t.nav.following}><Icon name="star" /></Link>
+          </li>
           <li className="top-nav__desktop">{link('/for-players', t.nav.forPlayers)}</li>
           <li className="top-nav__desktop">{link('/for-scouts', t.nav.forScouts)}</li>
           <li>

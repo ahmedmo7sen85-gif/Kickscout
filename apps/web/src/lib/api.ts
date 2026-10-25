@@ -19,6 +19,7 @@ export const KNOWN_ERROR_CODES = [
   'BILLING_NOT_CONFIGURED', 'ALREADY_SUBSCRIBED', 'CONTACT_SALES', 'PLAN_NOT_PURCHASABLE', 'PRICE_NOT_AVAILABLE', 'COUPON_INVALID',
   'COUPON_NOT_AVAILABLE', 'NO_BILLING_ACCOUNT', 'QUOTA_SCOUT_SEARCHES', 'QUOTA_SHORTLIST_SLOTS', 'QUOTA_ACTIVE_VIDEOS', 'QUOTA_DAILY_UPLOADS',
   'FEATURE_DISABLED',
+  'FOOTBALL_DISABLED', 'FOOTBALL_PROVIDER_UNAVAILABLE', 'NOT_SUPPORTED_BY_PROVIDER', 'FAVORITES_LIMIT', 'PUSH_NOT_CONFIGURED', 'NO_PUSH_DEVICES',
 ] as const;
 export type KnownErrorCode = (typeof KNOWN_ERROR_CODES)[number];
 
@@ -234,6 +235,29 @@ export function createApiClient(opts: ApiClientOptions = {}) {
     // product analytics and feature flags
     trackEvents: (b: T.TrackEventsRequest) => send<T.TrackEventsResponse>('POST', '/v1/events', b),
     flags: (s?: AbortSignal) => get<T.EvaluatedFlags>('/v1/flags', undefined, s),
+
+    // Football utility: public reads, then favourites, alert settings and push (signed in).
+    footballStatus: (s?: AbortSignal) => get<T.FootballStatusView>('/v1/football/status', undefined, s),
+    footballMatches: (q: { date?: string; tz?: string; competition?: string; status?: 'all' | 'live' | 'upcoming' | 'finished' }, s?: AbortSignal) =>
+      get<T.MatchListView>('/v1/football/matches', q, s),
+    footballMatch: (id: string, s?: AbortSignal) => get<T.MatchDetailResponse>(`/v1/football/matches/${e(id)}`, undefined, s),
+    footballTeam: (id: string, s?: AbortSignal) => get<T.TeamMatchesView>(`/v1/football/teams/${e(id)}`, undefined, s),
+    footballStandings: (id: string, s?: AbortSignal) => get<T.StandingsView>(`/v1/football/competitions/${e(id)}/standings`, undefined, s),
+    footballCompetitions: (s?: AbortSignal) => get<T.CompetitionsView>('/v1/football/competitions', undefined, s),
+    footballSearch: (q: string, s?: AbortSignal) => get<T.FootballSearchView>('/v1/football/search', { q }, s),
+    favorites: (s?: AbortSignal) => get<T.FavoritesView>('/v1/me/football/favorites', undefined, s),
+    followTeam: (id: string) => send<T.FavoritesView>('PUT', `/v1/me/football/favorites/teams/${e(id)}`),
+    unfollowTeam: (id: string) => send<T.FavoritesView>('DELETE', `/v1/me/football/favorites/teams/${e(id)}`),
+    followCompetition: (id: string) => send<T.FavoritesView>('PUT', `/v1/me/football/favorites/competitions/${e(id)}`),
+    unfollowCompetition: (id: string) => send<T.FavoritesView>('DELETE', `/v1/me/football/favorites/competitions/${e(id)}`),
+    importFavorites: (b: { teams: string[]; competitions: string[] }) => send<T.FavoritesView>('POST', '/v1/me/football/favorites/import', b),
+    alertPreferences: (s?: AbortSignal) => get<T.AlertPreferencesView>('/v1/me/football/alerts', undefined, s),
+    updateAlertPreferences: (b: T.UpdateAlertPreferencesRequest) => send<T.AlertPreferencesView>('PATCH', '/v1/me/football/alerts', b),
+    pushConfig: (s?: AbortSignal) => get<T.PushConfigView>('/v1/push/config', undefined, s),
+    pushSubscribe: (b: T.PushSubscribeRequest) => send<T.PushStatusView>('POST', '/v1/me/push/subscriptions', b),
+    pushRemove: (endpoint: string) => send<T.PushStatusView>('POST', '/v1/me/push/subscriptions/remove', { endpoint }),
+    pushStatus: (endpoint: string) => send<T.PushStatusView>('POST', '/v1/me/push/status', { endpoint }),
+    pushTest: () => send<T.PushTestResult>('POST', '/v1/me/push/test'),
 
     // organizations
     createOrg: (b: T.CreateOrganizationRequest) => send<T.OrganizationPublicView>('POST', '/v1/orgs', b),

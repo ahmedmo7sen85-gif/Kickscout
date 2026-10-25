@@ -36,10 +36,14 @@ that need a native speaker's review before launch.
 | Observability | One JSON access-log line per request (request id, hashed user id, route, status, latency), `x-request-id` echoed, an `ErrorReporter` interface (logs by default), `GET /v1/health` and `GET /v1/ready`, worker batch metrics (jobs done/retried/failed, busy time, queue depth) | API + worker tests |
 | SEO | Per-page title, description, canonical URL and Open Graph/Twitter cards with a brand image; `sitemap.xml` (only indexable profiles and videos, from `GET /v1/sitemap`); `robots.txt`; JSON-LD `ProfilePage` and `VideoObject` on indexable pages only | API + web tests |
 | Languages and accessibility | English, Arabic (RTL), Spanish, Portuguese and French with key parity; locale switcher; `Accept-Language` default; WCAG 2.2 AA basics (contrast tokens, 24 px targets, visible focus, labelled controls) checked by tests | Web tests |
+| Football scores | `/scores` (day navigation in the visitor's time zone, live / upcoming / finished, competition filter), match pages (events, line-ups, stats when the source has them), team pages, standings. One `@fp/football` adapter layer: SportScore (default, no key) and football-data.org (free key), plus invented fixtures for tests. Shared Postgres cache, stale-if-error with a visible "last updated" notice, backoff on provider failures, the source and its required attribution on every page. Nothing is ever invented: unsupported data says so | `@fp/football` (real SportScore samples) + API + web tests |
+| Favourite teams and competitions | Follow from any match, team or competition page; saved on the device before sign-up and moved into the account on sign-in; owner-only API, 50 per kind; included in the data export and deleted with the account | API + web tests |
+| Match alerts (Web Push) | Service worker (`/sw.js`), permission asked only from a button, per-category settings (starting soon, kick-off, goals, half-time, full-time, line-ups), VAPID keys server-side only, push endpoint allowlist, one row per alert and device so nothing is sent twice, retries, dead devices removed, test notification. Alerts come from comparing stored match state with fresh data in `GET /v1/cron/football` (no per-user polling) | API tests (push service faked); needs VAPID keys and a minute-level scheduler to run in production |
 | Demo content | Labelled demo players, scout and challenges using the 20 promo clips, refused in production | API test |
 
 ### Not built yet (and labelled as such in the product)
 
+- **Football news**: no news source is connected (none with clear free reuse terms was found); there is no news page rather than invented articles. Match alerts need an external scheduler calling `GET /v1/cron/football` every minute (Vercel Hobby crons run once a day); see `docs/ENVIRONMENT_SETUP.md`.
 - Natural-language search and For You personalisation are **Prototypes**, off until
   `NL_SCOUT_SEARCH=on` / `FOR_YOU_PERSONALIZATION=on` for everyone, or roll out gradually with the `nl_scout_search` and `for_you_personalization` flags.
   Scout comparison, direct messaging, Apple sign-in return **Coming Soon** capability labels.
@@ -78,6 +82,7 @@ player is notified.
 | `packages/domain` | Pure rules: age and jurisdiction, privacy projection, authorization policy, Talent Radar, taxonomy, capability labels |
 | `packages/contracts` | Zod request/response schemas shared by API and web; generates OpenAPI 3.1 |
 | `packages/db` | Kysely database types, connection, migration runner |
+| `packages/football` | Football data providers (SportScore, football-data.org, test fixtures), normalised match types, status mapping, alert detection |
 | `apps/api` | HTTP API |
 | `apps/worker` | Background video processing and AI |
 | `apps/web` | Web app |
@@ -304,3 +309,10 @@ or child safety is priority 0.
   after legal review of the subscription terms.
 
 Design notes: [docs/adr/0001-architecture.md](docs/adr/0001-architecture.md).
+
+More documentation:
+[project audit](docs/PROJECT_AUDIT.md) ·
+[implementation report](docs/IMPLEMENTATION_REPORT.md) ·
+[architecture](docs/ARCHITECTURE.md) ·
+[environment setup](docs/ENVIRONMENT_SETUP.md) ·
+[costs and services](docs/COST_AND_SERVICES.md).

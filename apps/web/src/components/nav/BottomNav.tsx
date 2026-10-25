@@ -7,7 +7,7 @@ import { useAuth } from '@/lib/auth';
 import { useI18n } from '@/lib/i18n/provider';
 import { BOTTOM_ITEMS, isActive } from './links';
 
-/** Mobile bottom navigation: Home, Discover, Upload, Talent Radar, Profile. */
+/** Mobile bottom navigation: Home, Discover, Scores, Upload, Talent Radar, Profile. */
 export function BottomNav() {
   const pathname = usePathname();
   const { t } = useI18n();

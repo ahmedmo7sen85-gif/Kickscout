@@ -162,3 +162,26 @@ export type EvaluatedFlags = z.infer<typeof C.EvaluatedFlags>;
 export type FeatureFlagView = z.infer<typeof C.FeatureFlagView>;
 export type SitemapView = z.infer<typeof C.SitemapView>;
 export type SeoProfileView = z.infer<typeof C.SeoProfileView>;
+
+// ---------------------------------------------------------------- football utility
+export type MatchStatus = z.infer<typeof C.MatchStatus>;
+export type TeamRef = z.infer<typeof C.TeamRefView>;
+export type CompetitionRef = z.infer<typeof C.CompetitionRefView>;
+export type MatchView = z.infer<typeof C.MatchView>;
+export type MatchDetailView = z.infer<typeof C.MatchDetailView>;
+export type FootballSource = z.infer<typeof C.SourceView>;
+export type MatchListView = z.infer<typeof C.MatchListView>;
+export type MatchDetailResponse = z.infer<typeof C.MatchDetailResponse>;
+export type TeamMatchesView = z.infer<typeof C.TeamMatchesView>;
+export type StandingsView = z.infer<typeof C.StandingsView>;
+export type CompetitionsView = z.infer<typeof C.CompetitionsView>;
+export type FootballSearchView = z.infer<typeof C.FootballSearchView>;
+export type FootballStatusView = z.infer<typeof C.FootballStatusView>;
+export type FavoritesView = z.infer<typeof C.FavoritesView>;
+export type AlertCategory = z.infer<typeof C.AlertCategory>;
+export type AlertPreferencesView = z.infer<typeof C.AlertPreferencesView>;
+export type UpdateAlertPreferencesRequest = z.input<typeof C.UpdateAlertPreferencesRequest>;
+export type PushConfigView = z.infer<typeof C.PushConfigView>;
+export type PushSubscribeRequest = z.input<typeof C.PushSubscribeRequest>;
+export type PushStatusView = z.infer<typeof C.PushStatusView>;
+export type PushTestResult = z.infer<typeof C.PushTestResult>;

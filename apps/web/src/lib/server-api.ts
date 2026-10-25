@@ -1,6 +1,6 @@
 import 'server-only';
 import { publicEnv } from './env';
-import type { SeoProfileView, SitemapView, VideoView } from './types';
+import type { MatchDetailResponse, SeoProfileView, SitemapView, StandingsView, TeamMatchesView, VideoView } from './types';
 
 /**
  * Server-side, unauthenticated reads used only for SEO metadata. Failures return null so a page
@@ -44,4 +44,19 @@ export function fetchSeoProfile(handle: string): Promise<SeoProfileView | null> 
 /** Indexable profiles and videos for sitemap.xml; null when the API is unreachable. */
 export function fetchSitemap(): Promise<SitemapView | null> {
   return getJson<SitemapView>('/v1/sitemap', 3600);
+}
+
+const FOOTBALL_ID = /^[A-Za-z0-9~_-]{1,130}$/;
+
+/** A match for page metadata; null when unknown, unavailable or the id is malformed. */
+export function fetchMatchMeta(id: string): Promise<MatchDetailResponse | null> {
+  return FOOTBALL_ID.test(id) ? getJson<MatchDetailResponse>(`/v1/football/matches/${encodeURIComponent(id)}`, 60) : Promise.resolve(null);
+}
+
+export function fetchTeamMeta(id: string): Promise<TeamMatchesView | null> {
+  return FOOTBALL_ID.test(id) ? getJson<TeamMatchesView>(`/v1/football/teams/${encodeURIComponent(id)}`, 300) : Promise.resolve(null);
+}
+
+export function fetchStandingsMeta(id: string): Promise<StandingsView | null> {
+  return FOOTBALL_ID.test(id) ? getJson<StandingsView>(`/v1/football/competitions/${encodeURIComponent(id)}/standings`, 600) : Promise.resolve(null);
 }
