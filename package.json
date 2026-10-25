@@ -15,5 +15,12 @@
   "devDependencies": {
     "turbo": "^2.5.0",
     "typescript": "^5.9.0"
+  },
+  "pnpm": {
+    "overrides": {
+      "postcss@<8.5.23": "^8.5.23",
+      "fast-uri@<3.1.9": "^3.1.9",
+      "fast-uri@>=4 <4.2.3": "^4.2.3"
+    }
   }
 }
