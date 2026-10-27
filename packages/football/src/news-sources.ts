@@ -38,7 +38,7 @@ export const NEWS_SOURCES: NewsSource[] = [
     language: 'en', region: 'europe', country: 'GB', linkHosts: ['bbc.co.uk', 'bbc.com'], images: false, enabledByDefault: true,
   },
   {
-    id: 'bbc-african-football', publisher: 'BBC Sport', section: 'African football', feedUrl: 'https://feeds.bbci.co.uk/sport/football/african/rss.xml',
+    id: 'bbc-african-football', publisher: 'BBC Sport', section: 'African football', feedUrl: 'https://feeds.bbci.co.uk/sport/africa/rss.xml',
     homepage: 'https://www.bbc.co.uk/sport/africa', termsUrl: 'https://www.bbc.co.uk/usingthebbc/terms',
     language: 'en', region: 'africa', country: null, linkHosts: ['bbc.co.uk', 'bbc.com'], images: false, enabledByDefault: true,
   },
@@ -91,6 +91,21 @@ export const NEWS_SOURCES: NewsSource[] = [
     id: 'filgoal', publisher: 'FilGoal', section: null, feedUrl: 'https://www.filgoal.com/section/rss/',
     homepage: 'https://www.filgoal.com/', termsUrl: 'https://www.filgoal.com/',
     language: 'ar', region: 'africa', country: 'EG', linkHosts: ['filgoal.com'], images: false, enabledByDefault: true,
+  },
+  {
+    id: 'bbc-arabic-sport', publisher: 'BBC عربي', section: 'رياضة', feedUrl: 'https://feeds.bbci.co.uk/arabic/sports/rss.xml',
+    homepage: 'https://www.bbc.com/arabic/topics/c1e5gz0vy2gt', termsUrl: 'https://www.bbc.co.uk/usingthebbc/terms',
+    language: 'ar', region: 'global', country: null, linkHosts: ['bbc.co.uk', 'bbc.com'], images: false, enabledByDefault: true,
+  },
+  {
+    id: 'france24-arabic-sport', publisher: 'فرانس 24', section: 'رياضة', feedUrl: 'https://www.france24.com/ar/%D8%B1%D9%8A%D8%A7%D8%B6%D8%A9/rss',
+    homepage: 'https://www.france24.com/ar/', termsUrl: 'https://www.france24.com/ar/',
+    language: 'ar', region: 'global', country: null, linkHosts: ['france24.com'], images: false, enabledByDefault: true,
+  },
+  {
+    id: 'skynewsarabia-sport', publisher: 'سكاي نيوز عربية', section: 'رياضة', feedUrl: 'https://www.skynewsarabia.com/rss/sport.xml',
+    homepage: 'https://www.skynewsarabia.com/sport', termsUrl: 'https://www.skynewsarabia.com/',
+    language: 'ar', region: 'global', country: null, linkHosts: ['skynewsarabia.com'], images: false, enabledByDefault: true,
   },
   {
     id: 'kooora', publisher: 'Kooora', section: null, feedUrl: 'https://feeds.feedburner.com/kooora/Wnpe',

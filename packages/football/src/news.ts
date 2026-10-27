@@ -49,9 +49,10 @@ export function plainText(v: unknown): string {
   return decodeEntities(
     v.replace(/<!\[CDATA\[|\]\]>/g, '')
       .replace(/<(script|style)[\s\S]*?<\/\1>/gi, ' ')
-      .replace(/<br\s*\/?>|<\/p>/gi, ' ')
+      .replace(/<br\s*\/?>|<\/p>|<\/h\d>/gi, ' ')
+      .replace(/<\/li>/gi, '. ')
       .replace(/<[^>]*>/g, ' '),
-  ).replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+  ).replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').replace(/\.\s+\./g, '.').trim();
 }
 
 export function shorten(s: string, max: number): string {
@@ -196,7 +197,8 @@ export function parseFeed(xml: string, source: NewsSource, now: Date): NewsItem[
     const publishedAt = feedDate(item.pubDate ?? item.published ?? item.updated ?? item['dc:date'], now);
     if (!title || !url || !publishedAt || seen.has(url)) continue;
     seen.add(url);
-    const rawSummary = plainText(text(item.description ?? item.summary ?? item.content));
+    // Publishers append their own link text ("Continue reading..."); the card has its own link.
+    const rawSummary = plainText(text(item.description ?? item.summary ?? item.content)).replace(/\s*(continue reading|read more)\s*(\.+|…)?\s*$/i, '').trim();
     const summary = rawSummary && titleKey(rawSummary) !== titleKey(title) ? shorten(rawSummary, SUMMARY_MAX) : null;
     const categories = asArray(item.category).map((c) => plainText(text(c) || String(obj(c)?.['@_term'] ?? ''))).filter(Boolean);
     const image = source.images ? imageOf(item) : null;

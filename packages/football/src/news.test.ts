@@ -101,6 +101,11 @@ describe('news helpers', () => {
     // Escaped markup is decoded and then stripped too, so no tag survives into the UI.
     expect(plainText('&lt;b&gt;bold&lt;/b&gt; text')).toBe('bold text');
   });
+  it('drops the publisher’s own “Continue reading” link text and separates list items', () => {
+    const feed = `<rss version="2.0"><channel><item><title>Kane wins award</title><link>https://www.theguardian.com/football/x</link>
+      <pubDate>Tue, 27 Oct 2026 12:00:00 GMT</pubDate><description><![CDATA[<ul><li>First point</li><li>Second point</li></ul><p>Body text</p> <a href="x">Continue reading...</a>]]></description></item></channel></rss>`;
+    expect(parseFeed(feed, guardian, now)[0]!.summary).toBe('First point. Second point. Body text');
+  });
   it('shortens on a word boundary', () => {
     expect(shorten('one two three four five', 12)).toBe('one two…');
   });

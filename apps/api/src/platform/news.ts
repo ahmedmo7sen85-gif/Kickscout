@@ -110,11 +110,15 @@ export class NewsService {
         let count: number | null = null;
         if (res.notModified) report.notModified++;
         else {
-          const items = parseFeed(res.body ?? '', source, this.now());
-          if (!items.length) throw new ProviderError('bad_response', 'feed has no usable items');
+          const parsed = parseFeed(res.body ?? '', source, this.now());
+          if (!parsed.length) throw new ProviderError('bad_response', 'feed has no usable items');
+          // A feed whose items are all past the retention window is a dead feed: nothing is stored
+          // and it reports zero recent items, so it can be switched off.
+          const cutoff = new Date(this.now().getTime() - NEWS_RETENTION_DAYS * 86400_000).toISOString();
+          const items = parsed.filter((i) => i.publishedAt >= cutoff);
           // Feeds download in parallel but are stored one at a time, so the same story from two
           // sources in one run is recognised as a duplicate.
-          const stored = storing.then(() => this.store(source, items));
+          const stored = items.length ? storing.then(() => this.store(source, items)) : Promise.resolve({ inserted: 0, duplicates: 0 });
           storing = stored.catch(() => {});
           const r = await stored;
           report.inserted += r.inserted;
