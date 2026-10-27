@@ -18,7 +18,7 @@ storage, encryption keys, CORS, Stripe test mode, `CRON_SECRET`, AI). Nothing ab
 | `VAPID_SUBJECT` | For alerts | `mailto:` address or `https://` URL push services can contact |
 | `CRON_SECRET` | For alerts | Already exists for billing; also protects `GET /v1/cron/football` and `GET /v1/cron/news` |
 | `NEWS` | No (default `on`) | `off` hides football news (the API answers 503 `NEWS_DISABLED`) |
-| `NEWS_SOURCES_DISABLED` | No | Comma-separated news source ids to leave out in this environment, e.g. `kooora,filgoal` |
+| `NEWS_SOURCES_DISABLED` | No | Comma-separated news source ids to leave out in this environment, e.g. `kooora,nilesports` |
 
 The three VAPID variables must be set together or not at all (the API refuses to start with a
 partial set). The web app needs no new variables.

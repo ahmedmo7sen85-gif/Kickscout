@@ -1214,7 +1214,7 @@ export const en = {
   news: {
     title: "Football news",
     intro: "Headlines from football publishers, each linked to the original article.",
-    description: "Football news from BBC Sport, The Guardian, Sky Sports, KingFut, FilGoal and more, with the publisher and a link to every original article.",
+    description: "Football news from BBC Sport, The Guardian, Sky Sports, KingFut, Sky News Arabia and more, with the publisher and a link to every original article.",
     regionLabel: "Region",
     topicLabel: "Topic",
     languageLabel: "Language",
