@@ -19,7 +19,7 @@ export const KNOWN_ERROR_CODES = [
   'BILLING_NOT_CONFIGURED', 'ALREADY_SUBSCRIBED', 'CONTACT_SALES', 'PLAN_NOT_PURCHASABLE', 'PRICE_NOT_AVAILABLE', 'COUPON_INVALID',
   'COUPON_NOT_AVAILABLE', 'NO_BILLING_ACCOUNT', 'QUOTA_SCOUT_SEARCHES', 'QUOTA_SHORTLIST_SLOTS', 'QUOTA_ACTIVE_VIDEOS', 'QUOTA_DAILY_UPLOADS',
   'FEATURE_DISABLED',
-  'FOOTBALL_DISABLED', 'FOOTBALL_PROVIDER_UNAVAILABLE', 'NOT_SUPPORTED_BY_PROVIDER', 'FAVORITES_LIMIT', 'PUSH_NOT_CONFIGURED', 'NO_PUSH_DEVICES',
+  'FOOTBALL_DISABLED', 'FOOTBALL_PROVIDER_UNAVAILABLE', 'NEWS_DISABLED', 'UNKNOWN_SOURCE', 'NOT_SUPPORTED_BY_PROVIDER', 'FAVORITES_LIMIT', 'PUSH_NOT_CONFIGURED', 'NO_PUSH_DEVICES',
 ] as const;
 export type KnownErrorCode = (typeof KNOWN_ERROR_CODES)[number];
 
@@ -245,6 +245,9 @@ export function createApiClient(opts: ApiClientOptions = {}) {
     footballStandings: (id: string, s?: AbortSignal) => get<T.StandingsView>(`/v1/football/competitions/${e(id)}/standings`, undefined, s),
     footballCompetitions: (s?: AbortSignal) => get<T.CompetitionsView>('/v1/football/competitions', undefined, s),
     footballSearch: (q: string, s?: AbortSignal) => get<T.FootballSearchView>('/v1/football/search', { q }, s),
+    news: (q: { region?: string; language?: string; topic?: string; source?: string; q?: string; rumours?: 'include' | 'exclude'; cursor?: string; limit?: number }, s?: AbortSignal) =>
+      get<T.NewsListView>('/v1/news', q, s),
+    newsSources: (s?: AbortSignal) => get<T.NewsSourcesView>('/v1/news/sources', undefined, s),
     favorites: (s?: AbortSignal) => get<T.FavoritesView>('/v1/me/football/favorites', undefined, s),
     followTeam: (id: string) => send<T.FavoritesView>('PUT', `/v1/me/football/favorites/teams/${e(id)}`),
     unfollowTeam: (id: string) => send<T.FavoritesView>('DELETE', `/v1/me/football/favorites/teams/${e(id)}`),

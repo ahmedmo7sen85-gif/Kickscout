@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { Crest, FollowButton, MatchRow, SourceLine } from '@/components/football/Football';
 import { FootballError, OfflineNotice } from '@/components/football/FootballStates';
+import { LatestNews } from '@/components/football/News';
 import { useFootball } from '@/components/football/useFootball';
 import { PageHead, Section } from '@/components/PageHead';
 import { SkeletonList } from '@/components/ui/Skeleton';
@@ -12,7 +13,7 @@ import { useI18n } from '@/lib/i18n/provider';
 
 /** A team's recent results and upcoming fixtures, as far as the data source shares them. */
 export function TeamView({ id }: { id: string }) {
-  const { t } = useI18n();
+  const { t, fmt } = useI18n();
   const [tz, setTz] = useState('UTC');
   useEffect(() => { setTz(readTimeZonePref(safeStorage()) ?? browserTimeZone()); }, []);
   const q = useFootball((s) => api.footballTeam(id, s), [id], { refreshMs: 120_000 });
@@ -38,6 +39,7 @@ export function TeamView({ id }: { id: string }) {
         {recent.length ? <ul className="match-list">{recent.map((m) => <MatchRow key={m.id} m={m} tz={tz} />)}</ul> : <p className="muted">{t.football.noRecent}</p>}
       </Section>
       <SourceLine source={source} />
+      <LatestNews q={team.name} title={fmt(t.news.teamNews, { team: team.name })} emptyText={fmt(t.news.noTeamNews, { team: team.name })} />
     </div>
   );
 }

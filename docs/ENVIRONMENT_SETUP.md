@@ -16,7 +16,9 @@ storage, encryption keys, CORS, Stripe test mode, `CRON_SECRET`, AI). Nothing ab
 | `VAPID_PUBLIC_KEY` | For alerts | Web Push public key |
 | `VAPID_PRIVATE_KEY` | For alerts | Web Push private key. Secret. Server only |
 | `VAPID_SUBJECT` | For alerts | `mailto:` address or `https://` URL push services can contact |
-| `CRON_SECRET` | For alerts | Already exists for billing; also protects `GET /v1/cron/football` |
+| `CRON_SECRET` | For alerts | Already exists for billing; also protects `GET /v1/cron/football` and `GET /v1/cron/news` |
+| `NEWS` | No (default `on`) | `off` hides football news (the API answers 503 `NEWS_DISABLED`) |
+| `NEWS_SOURCES_DISABLED` | No | Comma-separated news source ids to leave out in this environment, e.g. `kooora,filgoal` |
 
 The three VAPID variables must be set together or not at all (the API refuses to start with a
 partial set). The web app needs no new variables.
@@ -43,6 +45,19 @@ DATABASE_URL=postgres://fp:fp@localhost:5432/fp_dev pnpm --filter @fp/db migrate
 
 In production this waits for the owner's approval (and PRs #1–#4 bring 0010–0012; order does
 not matter, the runner applies whatever is missing in name order).
+
+## Football news
+Apply `db/migrations/0014_news.sql` (two new tables, additive). Sources are listed in
+`packages/football/src/news-sources.ts`; add one there, or switch one off without a deploy:
+
+```sql
+update news_sources set enabled = false where id = 'kooora';
+```
+
+No scheduler is needed: the first reader after a feed is due (every 10 minutes) triggers the read,
+inside a short time budget, and every instance shares the result through the database. A
+scheduler calling `GET /v1/cron/news` with the cron secret is optional. Feed health is public at
+`GET /v1/news/sources`.
 
 ## Scheduler for match alerts
 `GET /v1/cron/football` with `Authorization: Bearer <CRON_SECRET>` must be called about once a

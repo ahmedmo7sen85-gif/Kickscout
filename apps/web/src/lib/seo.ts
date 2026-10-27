@@ -92,7 +92,7 @@ export function videoJsonLd(v: VideoView, siteUrl: string, description: string) 
 
 /** Public pages anyone may index. Signed-in areas, staff tools and forms are never listed. */
 export const STATIC_SITEMAP_PATHS = [
-  '/', '/home', '/discover', '/radar', '/scores', '/challenges', '/search', '/for-players', '/for-scouts', '/pricing', '/safety', '/legal', '/legal/takedown',
+  '/', '/home', '/discover', '/radar', '/scores', '/news', '/challenges', '/search', '/for-players', '/for-scouts', '/pricing', '/safety', '/legal', '/legal/takedown',
   ...LEGAL_DOCS.map((d) => `/legal/${d.slug}`),
 ] as const;
 
@@ -107,7 +107,7 @@ export function buildSitemap(siteUrl: string, data: SitemapView | null, now = ne
   const entries: MetadataRoute.Sitemap = STATIC_SITEMAP_PATHS.map((p) => ({
     url: `${siteUrl}${p === '/' ? '' : p}` || siteUrl,
     lastModified: now,
-    changeFrequency: p === '/home' || p === '/discover' || p === '/radar' || p === '/scores' ? 'hourly' : 'weekly',
+    changeFrequency: p === '/home' || p === '/discover' || p === '/radar' || p === '/scores' || p === '/news' ? 'hourly' : 'weekly',
     priority: p === '/' ? 1 : 0.6,
   }));
   if (!data) return entries;

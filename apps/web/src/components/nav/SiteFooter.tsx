@@ -15,6 +15,7 @@ export function SiteFooter() {
         <span>{t.landing.footerTagline}</span>
         <nav aria-label={t.nav.footerLabel}>
           <ul>
+            <li><Link href="/news">{t.nav.news}</Link></li>
             <li><Link href="/for-players">{t.nav.forPlayers}</Link></li>
             <li><Link href="/for-scouts">{t.nav.forScouts}</Link></li>
             <li><Link href="/pricing">{t.nav.pricing}</Link></li>

@@ -71,6 +71,12 @@ const Env = z
     FOOTBALL_PROVIDER: z.enum(['sportscore', 'football-data', 'fixture', 'off']).default('sportscore'),
     FOOTBALL_DATA_API_KEY: unsetIfEmpty(z.string().min(10).optional()),
     /**
+     * Football news from the publisher feeds listed in @fp/football NEWS_SOURCES (no keys needed).
+     * NEWS_SOURCES_DISABLED is a comma-separated list of source ids to leave out in this environment.
+     */
+    NEWS: z.enum(['on', 'off']).default('on'),
+    NEWS_SOURCES_DISABLED: z.string().default('').transform((s) => s.split(',').map((x) => x.trim()).filter(Boolean)),
+    /**
      * Web Push (VAPID). Generate once with `npx web-push generate-vapid-keys`. The private key stays
      * on the server; the public key is served to browsers by GET /v1/push/config. Set all three or none.
      */

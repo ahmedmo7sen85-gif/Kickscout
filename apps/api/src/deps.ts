@@ -7,6 +7,7 @@ import type { PaymentProvider } from './platform/billing/provider.js';
 import type { AiRouter } from '@fp/ai';
 import type { ErrorReporter } from './platform/error-reporter.js';
 import type { FootballService } from './platform/football.js';
+import type { NewsService } from './platform/news.js';
 import type { PushSender } from './platform/push.js';
 
 export interface Deps {
@@ -25,6 +26,8 @@ export interface Deps {
   errorReporter?: ErrorReporter;
   /** Football data through the shared cache; null/absent when FOOTBALL_PROVIDER=off (football endpoints answer 503). */
   football?: FootballService | null;
+  /** Football news from publisher feeds; null/absent when NEWS=off (news endpoints answer 503). */
+  news?: NewsService | null;
   /** Web Push sender; null/absent until VAPID keys are configured (alerts are then not sent). */
   push?: PushSender | null;
 }

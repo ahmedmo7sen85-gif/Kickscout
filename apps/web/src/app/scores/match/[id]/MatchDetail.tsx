@@ -42,9 +42,14 @@ export function MatchDetail({ id }: { id: string }) {
   const { t, fmt, locale } = useI18n();
   const [tz, setTz] = useState('UTC');
   useEffect(() => { setTz(readTimeZonePref(safeStorage()) ?? browserTimeZone()); }, []);
-  const [live, setLive] = useState(false);
-  const q = useFootball((s) => api.footballMatch(id, s), [id], { refreshMs: live ? 60_000 : null });
-  useEffect(() => { setLive(Boolean(q.data && isInPlay(q.data.match.status))); }, [q.data]);
+  // 30 s while live, 2 minutes before kick-off (so the page notices the start), never once it is over.
+  const [phase, setPhase] = useState<'live' | 'before' | 'over'>('before');
+  const q = useFootball((s) => api.footballMatch(id, s), [id], { refreshMs: phase === 'live' ? 30_000 : phase === 'before' ? 120_000 : null });
+  useEffect(() => {
+    if (!q.data) return;
+    const st = q.data.match.status;
+    setPhase(isInPlay(st) ? 'live' : st === 'scheduled' || st === 'unknown' ? 'before' : 'over');
+  }, [q.data]);
 
   if (q.loading && !q.data) return <div className="wrap page"><SkeletonList rows={5} label={t.common.loading} /></div>;
   if (q.error && !q.data) return <div className="wrap page"><FootballError error={q.error} onRetry={q.retry} /></div>;

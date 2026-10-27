@@ -6,3 +6,5 @@ export { getJson, slugify, type FetchLike, type HttpOptions } from './http.js';
 export { SportScoreProvider, SPORTSCORE_INFO, normaliseSportscoreMatch, normaliseSportscoreDetail } from './sportscore.js';
 export { FootballDataProvider, FOOTBALL_DATA_INFO, normaliseFootballDataMatch } from './football-data.js';
 export { FixtureProvider, FIXTURE_INFO, FIXTURE_COMPETITIONS, FIXTURE_TEAMS, fixtureMatches } from './fixture.js';
+export * from './news-sources.js';
+export * from './news.js';

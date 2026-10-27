@@ -408,6 +408,38 @@ export interface ModerationCases {
   target_kind: string;
 }
 
+export interface NewsArticles {
+  country: string | null;
+  id: string;
+  image_url: string | null;
+  imported_at: Generated<Timestamp>;
+  language: string;
+  published_at: Timestamp;
+  region: string;
+  rumour: Generated<boolean>;
+  source_id: string;
+  summary: string | null;
+  title: string;
+  title_key: string;
+  topics: Generated<string[]>;
+  updated_at: Generated<Timestamp>;
+  url: string;
+}
+
+export interface NewsSources {
+  enabled: Generated<boolean>;
+  etag: string | null;
+  failures: Generated<number>;
+  id: string;
+  item_count: Generated<number>;
+  last_attempt_at: Timestamp | null;
+  last_error: string | null;
+  last_error_at: Timestamp | null;
+  last_modified: string | null;
+  last_success_at: Timestamp | null;
+  next_fetch_at: Generated<Timestamp>;
+}
+
 export interface NotificationPreferences {
   announcements: Generated<boolean>;
   challenge: Generated<boolean>;
@@ -833,6 +865,8 @@ export interface DB {
   jurisdiction_rules: JurisdictionRules;
   likes: Likes;
   moderation_cases: ModerationCases;
+  news_articles: NewsArticles;
+  news_sources: NewsSources;
   notification_preferences: NotificationPreferences;
   notifications: Notifications;
   organization_invitations: OrganizationInvitations;
