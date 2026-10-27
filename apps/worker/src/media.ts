@@ -222,6 +222,12 @@ const shortSideScale = (max: number) =>
 
 const longSideScale = (max: number) => `scale=w='if(gte(iw,ih),min(${max},iw),-2)':h='if(gte(iw,ih),-2,min(${max},ih))'`;
 
+/**
+ * JPEG stills are full range. FFmpeg 8's mjpeg encoder refuses limited-range input (it no longer
+ * converts it on its own), so stills ask for full-range 4:2:0 explicitly.
+ */
+const JPEG_PIXELS = ['-pix_fmt', 'yuvj420p'];
+
 /** H.264 + AAC MP4, web-optimised (moov first), trimmed. */
 export async function transcode(tools: MediaTools, input: string, output: string, trim: TrimWindow): Promise<void> {
   await runOk(
@@ -246,7 +252,7 @@ export async function thumbnail(tools: MediaTools, input: string, output: string
   const at = durationMs >= 2_000 ? 1_000 : durationMs / 2;
   await runOk(
     tools.ffmpeg,
-    ['-nostdin', '-v', 'error', '-y', '-ss', secs(at), '-i', input, '-frames:v', '1', '-q:v', '3', output],
+    ['-nostdin', '-v', 'error', '-y', '-ss', secs(at), '-i', input, '-frames:v', '1', ...JPEG_PIXELS, '-q:v', '3', output],
     60_000,
     'thumbnail',
   );
@@ -266,7 +272,7 @@ export async function extractFrames(
     const path = `${dir}/frame-${i}.jpg`;
     await runOk(
       tools.ffmpeg,
-      ['-nostdin', '-v', 'error', '-y', '-ss', secs(atMs), '-i', input, '-frames:v', '1', '-vf', longSideScale(LIMITS.frameLongSide), '-q:v', '4', path],
+      ['-nostdin', '-v', 'error', '-y', '-ss', secs(atMs), '-i', input, '-frames:v', '1', '-vf', longSideScale(LIMITS.frameLongSide), ...JPEG_PIXELS, '-q:v', '4', path],
       60_000,
       'frame extraction',
     );
