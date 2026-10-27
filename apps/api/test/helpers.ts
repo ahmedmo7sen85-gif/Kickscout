@@ -17,6 +17,8 @@ import type { AiProvider } from '@fp/ai';
 import { FixtureProvider, type FootballProvider } from '@fp/football';
 import { FootballService } from '../src/platform/football.js';
 import type { PushSender } from '../src/platform/push.js';
+import { NewsService } from '../src/platform/news.js';
+import type { FetchLike, NewsSource } from '@fp/football';
 
 const ADMIN_URL = process.env.TEST_DATABASE_ADMIN_URL ?? 'postgres://fp:fp@localhost:5432/postgres';
 const ISSUER = 'https://idp.test/';
@@ -54,7 +56,7 @@ export interface TestEnv {
   close(): Promise<void>;
 }
 
-export async function createTestEnv(overrides: Partial<Config> = {}, opts: { billing?: PaymentProvider | null; ai?: AiProvider | null; football?: FootballProvider | null; push?: PushSender | null } = {}): Promise<TestEnv> {
+export async function createTestEnv(overrides: Partial<Config> = {}, opts: { billing?: PaymentProvider | null; ai?: AiProvider | null; football?: FootballProvider | null; push?: PushSender | null; news?: { fetchImpl: FetchLike; sources?: NewsSource[] } | null } = {}): Promise<TestEnv> {
   const dbName = `fp_test_${randomBytes(6).toString('hex')}`;
   const admin = new pg.Client({ connectionString: ADMIN_URL });
   await admin.connect();
@@ -76,7 +78,7 @@ export async function createTestEnv(overrides: Partial<Config> = {}, opts: { bil
     AUTH_AUDIENCE: AUDIENCE, S3_REGION: 'eu-central-1', S3_BUCKET_ORIGINALS: 'test', S3_FORCE_PATH_STYLE: true, CDN_BASE_URL: 'https://cdn.test',
     DOB_ENCRYPTION_KEY: randomBytes(32).toString('base64'), VIEWER_HASH_SECRET: randomBytes(32).toString('hex'), MAILER: 'log', ALLOW_LOG_MAILER: 'no', RATE_LIMIT_STORE: 'memory', MAX_VIDEO_SECONDS: 60, MAX_ACTIVE_VIDEOS: 20, MAX_UPLOADS_PER_DAY: 10, POLICY_VERSION: 'test-1',
     CORS_ORIGINS: 'https://web.test', WEB_APP_URL: 'https://web.test', CRON_SECRET: 'cron-secret-for-tests-0123456789',
-    NL_SCOUT_SEARCH: 'off', FOR_YOU_PERSONALIZATION: 'off', FOOTBALL_PROVIDER: 'fixture',
+    NL_SCOUT_SEARCH: 'off', FOR_YOU_PERSONALIZATION: 'off', FOOTBALL_PROVIDER: 'fixture', NEWS: 'on', NEWS_SOURCES_DISABLED: [],
   } satisfies Config;
   Object.assign(config, overrides);
   const deps: Deps = { config, db, verifier, storage, mailer, billing: opts.billing ?? null,
@@ -86,6 +88,10 @@ export async function createTestEnv(overrides: Partial<Config> = {}, opts: { bil
   const football = opts.football === undefined ? new FixtureProvider(() => deps.now()) : opts.football;
   deps.football = football ? new FootballService(football, db, () => deps.now()) : null;
   deps.push = opts.push ?? null;
+  // News never reaches the network in tests: without a fake fetch every feed read fails.
+  deps.news = opts.news === null ? null : new NewsService(db, () => deps.now(), {
+    fetchImpl: opts.news?.fetchImpl ?? (async () => { throw new TypeError('network disabled in tests'); }), sources: opts.news?.sources,
+  });
   const app = await buildApp(deps, { logger: false });
 
   return {

@@ -5,6 +5,7 @@ import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
 import { FollowButton, MatchRow, SourceLine, Crest } from '@/components/football/Football';
 import { FootballError, OfflineNotice } from '@/components/football/FootballStates';
+import { LatestNews } from '@/components/football/News';
 import { useFootball } from '@/components/football/useFootball';
 import { PageHead } from '@/components/PageHead';
 import { Icon } from '@/components/ui/Icon';
@@ -57,11 +58,15 @@ export function ScoresView() {
     router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
   };
 
+  // Poll every 30 s while something is live (the server cache and the provider update about once a
+  // minute, so faster polling would only repeat the same answer), every 2 minutes otherwise.
+  const [liveNow, setLiveNow] = useState(false);
   const q = useFootball((signal) => api.footballMatches({ date: day ?? undefined, tz: tz ?? undefined }, signal), [day, tz], {
     enabled: Boolean(tz && day),
-    refreshMs: 60_000,
+    refreshMs: liveNow ? 30_000 : 120_000,
   });
   const anyLive = q.data?.matches.some((m) => isInPlay(m.status)) ?? false;
+  useEffect(() => { setLiveNow(anyLive); }, [anyLive]);
 
   const shown = useMemo(() => (q.data?.matches ?? []).filter((m) => matchesFilter(m, filter) && (!competition || m.competition.id === competition)), [q.data, filter, competition]);
   const mine = shown.filter((m) => involves(m, fav.teamIds, fav.competitionIds));
@@ -72,7 +77,10 @@ export function ScoresView() {
   return (
     <div className="wrap page">
       <PageHead title={t.football.scoresTitle} intro={t.football.scoresIntro}
-        actions={<Link href="/following" className="btn btn--secondary btn--sm"><Icon name="star" size={16} />{t.nav.following}</Link>} />
+        actions={<span className="row">
+          <Link href="/news" className="btn btn--secondary btn--sm">{t.nav.news}</Link>
+          <Link href="/following" className="btn btn--secondary btn--sm"><Icon name="star" size={16} />{t.nav.following}</Link>
+        </span>} />
 
       <div className="scores-toolbar">
         <div className="day-nav" role="group" aria-label={t.football.pickDate}>
@@ -153,6 +161,8 @@ export function ScoresView() {
             <SourceLine source={q.data.source} />
           </div>
         ) : null}
+
+      <LatestNews />
     </div>
   );
 }

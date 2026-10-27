@@ -14,7 +14,8 @@ export function Logo() {
 }
 
 /**
- * Desktop: Home, Discover, Scores, Talent Radar, Challenges, Upload, then My teams, For Players, For Scouts,
+ * Desktop: Home, Discover, Scores, News, Talent Radar, Challenges, Upload, then My teams, For Players and For Scouts
+ * (1440px and wider; always in the footer),
  * Notifications, Profile. Phones get a compact bar; the bottom nav carries the main items.
  */
 export function TopNav() {
@@ -28,6 +29,7 @@ export function TopNav() {
     { href: '/home', label: t.nav.home },
     { href: '/discover', label: t.nav.discover },
     { href: '/scores', label: t.nav.scores },
+    { href: '/news', label: t.nav.news },
     { href: '/radar', label: t.nav.radar },
     { href: '/challenges', label: t.nav.challenges },
   ];
@@ -54,8 +56,8 @@ export function TopNav() {
           <li className="top-nav__desktop">
             <Link href="/following" className={`top-nav__icon${isActive(pathname, '/following') ? ' is-active' : ''}`} aria-label={t.nav.following} title={t.nav.following}><Icon name="star" /></Link>
           </li>
-          <li className="top-nav__desktop">{link('/for-players', t.nav.forPlayers)}</li>
-          <li className="top-nav__desktop">{link('/for-scouts', t.nav.forScouts)}</li>
+          <li className="top-nav__wide">{link('/for-players', t.nav.forPlayers)}</li>
+          <li className="top-nav__wide">{link('/for-scouts', t.nav.forScouts)}</li>
           <li>
             <Link href="/notifications" className={`top-nav__icon${isActive(pathname, '/notifications') ? ' is-active' : ''}`}
               aria-label={unread ? `${t.nav.notifications}, ${fmt(t.nav.unread, { n: unread })}` : t.nav.notifications} title={t.nav.notifications}>

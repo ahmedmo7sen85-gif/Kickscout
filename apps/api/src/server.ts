@@ -10,6 +10,7 @@ import { AiRouter, ClaudeProvider, dbCallRecorder, routingFromEnv } from '@fp/ai
 import { newId } from './platform/ids.js';
 import { FootballService, footballProviderFromConfig } from './platform/football.js';
 import { pushSenderFromConfig } from './platform/push.js';
+import { NewsService } from './platform/news.js';
 
 /** Builds the configured app; shared by the long-running server (main.ts) and the Vercel function (vercel.ts). */
 export async function createServer(opts: { poolSize?: number } = {}) {
@@ -41,6 +42,9 @@ export async function createServer(opts: { poolSize?: number } = {}) {
   const provider = footballProviderFromConfig(config);
   deps.football = provider ? new FootballService(provider, db, deps.now, { warn: (o, m) => console.warn(JSON.stringify({ level: 'warn', msg: m, ...o })) }) : null;
   deps.push = pushSenderFromConfig(config);
+  deps.news = config.NEWS === 'on'
+    ? new NewsService(db, deps.now, { disabled: new Set(config.NEWS_SOURCES_DISABLED), log: { warn: (o, m) => console.warn(JSON.stringify({ level: 'warn', msg: m, ...o })) } })
+    : null;
 
   const app = await buildApp(deps);
   if (config.MAILER !== 'log') throw new Error('MAILER=ses is not implemented yet');

@@ -19,10 +19,12 @@ import { analyticsRoutes } from './modules/analytics.js';
 import { flagRoutes } from './modules/flags.js';
 import { opsRoutes } from './modules/ops.js';
 import { footballRoutes } from './modules/football.js';
+import { newsRoutes } from './modules/news.js';
 
 export const routes: ApiRoute[] = [
   ...onboardingRoutes, ...profileRoutes, ...mediaRoutes, ...feedRoutes, ...socialRoutes, ...catalogRoutes,
   ...challengeRoutes, ...scoutRoutes, ...moderationRoutes, ...accountRoutes, ...copyrightRoutes,
   ...orgRoutes, ...crmRoutes, ...billingRoutes, ...recommendationRoutes, ...aiAdminRoutes, ...analyticsRoutes, ...flagRoutes, ...opsRoutes,
   ...footballRoutes,
+  ...newsRoutes,
 ];
