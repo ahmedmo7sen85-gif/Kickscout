@@ -1219,7 +1219,7 @@ export const pt: Dict = {
   news: {
     title: "Notícias de futebol",
     intro: "Manchetes de veículos de futebol, cada uma com link para o artigo original.",
-    description: "Notícias de futebol da BBC Sport, The Guardian, Sky Sports, KingFut, FilGoal e outros, com o veículo e um link para cada artigo original.",
+    description: "Notícias de futebol da BBC Sport, The Guardian, Sky Sports, KingFut, Sky News Arabia e outros, com o veículo e um link para cada artigo original.",
     regionLabel: "Região",
     topicLabel: "Tema",
     languageLabel: "Idioma",

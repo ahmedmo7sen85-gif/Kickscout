@@ -1219,7 +1219,7 @@ export const fr: Dict = {
   news: {
     title: "Actualités football",
     intro: "Les titres des médias football, chacun lié à l’article original.",
-    description: "Actualités football de BBC Sport, The Guardian, Sky Sports, KingFut, FilGoal et d’autres, avec le média et un lien vers chaque article original.",
+    description: "Actualités football de BBC Sport, The Guardian, Sky Sports, KingFut, Sky News Arabia et d’autres, avec le média et un lien vers chaque article original.",
     regionLabel: "Région",
     topicLabel: "Thème",
     languageLabel: "Langue",

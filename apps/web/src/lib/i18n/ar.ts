@@ -1216,7 +1216,7 @@ export const ar: Dict = {
   news: {
     title: "أخبار كرة القدم",
     intro: "عناوين من ناشري أخبار كرة القدم، وكل خبر مرتبط بمقاله الأصلي.",
-    description: "أخبار كرة القدم من BBC Sport وThe Guardian وSky Sports وKingFut وFilGoal وغيرها، مع اسم الناشر ورابط لكل مقال أصلي.",
+    description: "أخبار كرة القدم من BBC Sport وThe Guardian وSky Sports وKingFut وسكاي نيوز عربية وغيرها، مع اسم الناشر ورابط لكل مقال أصلي.",
     regionLabel: "المنطقة",
     topicLabel: "الموضوع",
     languageLabel: "اللغة",
